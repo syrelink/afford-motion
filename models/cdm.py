@@ -10,6 +10,7 @@ from models.functions import load_and_freeze_clip_model, encode_text_clip, \
     load_and_freeze_bert_model, encode_text_bert, get_lang_feat_dim_type
 from models.functions import load_scene_model
 
+
 class PointSceneMLP(nn.Module):
 
     def __init__(self, in_dim: int, out_dim: int, widening_factor: int=1, bias: bool=True) -> None:
@@ -37,53 +38,6 @@ class PointSceneMLP(nn.Module):
         point_feat = self.mlp_post(point_feat)
 
         return point_feat
-
-class ContactMLP(nn.Module):
-
-    def __init__(self, arch_cfg: DictConfig, contact_dim: int, point_feat_dim: int, text_feat_dim: int, time_emb_dim: int) -> None:
-        super().__init__()
-
-        self.point_mlp_dims = arch_cfg.point_mlp_dims
-        self.point_mlp_widening_factor = arch_cfg.point_mlp_widening_factor
-        self.point_mlp_bias = arch_cfg.point_mlp_bias
-
-        layers = []
-        idim = contact_dim + point_feat_dim + text_feat_dim + time_emb_dim
-        for odim in self.point_mlp_dims:
-            layers.append(PointSceneMLP(idim, odim, widening_factor=self.point_mlp_widening_factor, bias=self.point_mlp_bias))
-            idim = odim
-        self.point_mlp = nn.Sequential(*layers)
-
-    def forward(self, x: torch.Tensor, point_feat: torch.Tensor, language_feat: torch.Tensor, time_embedding: torch.Tensor, **kwargs) -> torch.Tensor:
-        """ Forward pass of the ContactMLP.
-
-        Args:
-            x: input contact map, [bs, num_points, contact_dim]
-            point_feat: [bs, num_points, point_feat_dim]
-            language_feat: [bs, 1, language_feat_dim]
-            time_embedding: [bs, 1, time_embedding_dim]
-        
-        Returns:
-            Output contact map, [bs, num_points, contact_dim]
-        """
-        if point_feat is not None:
-            bs, num_points, point_feat_dim = point_feat.shape
-            x = torch.cat([
-                x,
-                point_feat,
-                language_feat.repeat(1, num_points, 1),
-                time_embedding.repeat(1, num_points, 1)
-            ], dim=-1) # [bs, num_points, contact_dim + point_feat_dim + language_feat_dim + time_embedding_dim]
-        else:
-            x = torch.cat([
-                x,
-                language_feat.repeat(1, num_points, 1),
-                time_embedding.repeat(1, num_points, 1)
-            ], dim=-1) # [bs, num_points, contact_dim + language_feat_dim + time_embedding_dim]
-        x = self.point_mlp(x) # [bs, num_points, point_mlp_dim[-1]]
-
-        return x
-
 
 class ContactPerceiver(nn.Module):
     
@@ -447,10 +401,8 @@ class CDM(nn.Module):
 
         ## model architecture
         self.arch = cfg.arch
-        if self.arch == 'MLP':
-            self.arch_cfg = cfg.arch_mlp
-            CONTACT_MODEL = ContactMLP
-        elif self.arch == 'Perceiver':
+
+        if self.arch == 'Perceiver':
             self.arch_cfg = cfg.arch_perceiver
             CONTACT_MODEL = ContactPerceiver
         elif self.arch == 'PointTrans':
@@ -459,6 +411,7 @@ class CDM(nn.Module):
         elif self.arch == 'PointTransV2':
             self.arch_cfg = cfg.arch_pointtrans
             CONTACT_MODEL = ContactPointTransV2
+
         else:
             raise NotImplementedError
         self.contact_model = CONTACT_MODEL(
