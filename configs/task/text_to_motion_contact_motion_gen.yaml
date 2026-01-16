@@ -11,7 +11,8 @@ train:
   save_every_step: 10000 # save model every ${save_every_step} steps
   phase: 'train' # train or all
 
-  resume_ckpt: '' # resume from checkpoint
+# outputs/2025-09-15_15-05-55_RTX4090-real/ckpt/model300000.pt
+  resume_ckpt: 'outputs/2026-01-13_12-49-33_CMDM-Enc-H3D-mixtrain0.5-pointmamba-3-3250/ckpt/model350000.pt' # resume from checkpoint
   weight_decay: 0.0
   lr_anneal_steps: 0
   schedule_sampler_type: 'uniform'

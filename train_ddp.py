@@ -14,6 +14,7 @@ from utils.io import mkdir_if_not_exists, Board
 from utils.training import TrainLoop
 from utils.misc import compute_repr_dimesion
 
+
 @hydra.main(version_base=None, config_path="./configs", config_name="default")
 def main(cfg: DictConfig) -> None:
     """ Main function
@@ -22,7 +23,7 @@ def main(cfg: DictConfig) -> None:
         cfg: configuration dict
     """
     cfg.model.input_feats = compute_repr_dimesion(cfg.model.data_repr)
-    
+
     ## set rank and device
     cfg.gpu = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(cfg.gpu)
@@ -31,7 +32,7 @@ def main(cfg: DictConfig) -> None:
 
     ## set output logger and plot board
     if cfg.gpu == 0:
-        logger.remove(handler_id=0) # remove default handler
+        logger.remove(handler_id=0)  # remove default handler
         mkdir_if_not_exists(cfg.log_dir)
         mkdir_if_not_exists(cfg.ckpt_dir)
         mkdir_if_not_exists(cfg.eval_dir)
@@ -42,13 +43,13 @@ def main(cfg: DictConfig) -> None:
         ## Begin training progress
         logger.info('[Configuration]\n' + OmegaConf.to_yaml(cfg) + '\n')
         logger.info('[Train] ==> Beign training..')
-    
+
     # prepare training dataset
     train_dataset = create_dataset(cfg.task.dataset, cfg.task.train.phase, gpu=cfg.gpu)
     if cfg.gpu == 0:
         logger.info(f'Load train dataset size: {len(train_dataset)}')
     train_sampler = DistributedSampler(train_dataset, shuffle=True)
-    
+
     train_dataloader = train_dataset.get_dataloader(
         sampler=train_sampler,
         batch_size=cfg.task.train.batch_size,
@@ -78,17 +79,18 @@ def main(cfg: DictConfig) -> None:
 
     ## Training is over!
     if cfg.gpu == 0:
-        Board().close() # close board
+        Board().close()  # close board
         logger.info('[Train] ==> End training..')
+
 
 if __name__ == '__main__':
     SEED = 2023
-    torch.backends.cudnn.benchmark = False     
+    torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
     random.seed(SEED)
     np.random.seed(SEED)
-    
+
     main()

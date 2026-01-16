@@ -22,8 +22,25 @@ text_model:
   version: 'ViT-B/32'
   max_length: 32
 
-## model architecture
-arch: 'trans_enc'
+### model architecture
+#arch: 'trans_enc'
+#latent_dim: 512
+#mask_motion: true
+#num_layers: [1,1,1,1,1]
+#num_heads: 8
+#dropout: 0.1
+#dim_feedforward: 1024
+
+# 模型架构选择
+arch: "trans_mamba"
+# Mamba 相关参数
+mamba_layers: 1       # 如果 num_layers 总和也是 8，则全用 Mamba；如果是 4，则前 4 层 Trans，后 4 层 Mamba
+mamba_d_state: 16     # SSM 状态维度 (默认 16)
+mamba_d_conv: 4       # 局部卷积核大小 (默认 4)
+mamba_expand: 2       # 内部维度扩展倍数 (默认 2)
+mamba_drop_path: 0.1  # Stochastic Depth (建议设为 0.1 提高泛化)
+
+# 其他基础参数 (保持原 CMDM 设置)
 latent_dim: 512
 mask_motion: true
 num_layers: [1,1,1,1,1]

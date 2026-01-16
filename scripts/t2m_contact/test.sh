@@ -28,7 +28,7 @@ python test.py hydra/job_logging=none hydra/hydra_logging=none \
             diffusion.steps=500 \
             task=text_to_motion_contact_gen \
             model=cdm \
-            model.arch=Perceiver \
+            model.arch=PointMamba \
             model.scene_model.use_scene_model=False \
             model.text_model.max_length=20 \
             task.dataset.sigma=0.8 \

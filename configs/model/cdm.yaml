@@ -54,3 +54,12 @@ arch_pointtrans:
   last_dim: 64
   num_points: ${task.dataset.num_points}
   blocks: [2, 2, 2, 2]
+
+
+# === 新增的 PointMamba 配置 ===
+arch_pointmamba:
+  base_dim: 128       # 基础特征维度，建议 128 或 256，既保证精度又控制显存
+  last_dim: 128       # [关键] 必须等于 base_dim，以便 CDM 进行最终投影
+  mamba_d_state: 16   # Mamba 状态维数，默认 16 即可
+  mamba_expand: 2     # 扩展系数，默认 2
+  dropout: 0.1        # 防止过拟合

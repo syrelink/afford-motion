@@ -14,10 +14,10 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --nnodes=1 --nproc_per_node=2 --rdzv_backend=c
             diffusion.steps=500 \
             task=text_to_motion_contact_gen \
             task.dataset.sigma=0.8 \
-            task.train.batch_size=64 \
-            task.train.max_steps=300000 \
-            task.train.save_every_step=100000 \
+            task.train.batch_size=32 \
+            task.train.max_steps=500000 \
+            task.train.save_every_step=50000 \
             model=cdm \
-            model.arch=Perceiver \
+            model.arch=PointMambaUNet \
             model.scene_model.use_scene_model=False \
             model.text_model.max_length=20

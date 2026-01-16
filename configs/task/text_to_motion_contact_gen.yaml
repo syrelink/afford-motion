@@ -41,6 +41,9 @@ dataset:
   num_points: 8192
   min_horizon: 40
   max_horizon: 196
+  ratio: 1.0
+  use_openscene: false  # ← 新增
+  use_color: false      # ← 新增
   
   ## transforms
   train_transforms: ['NumpyToTensor']

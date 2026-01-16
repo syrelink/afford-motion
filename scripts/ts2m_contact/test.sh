@@ -13,8 +13,9 @@ python test.py hydra/job_logging=none hydra/hydra_logging=none \
             diffusion.steps=500 \
             task=contact_gen \
             model=cdm \
-            model.arch=Perceiver \
+            model.arch=PointMamba \
             task.dataset.sigma=0.8 \
+            task.dataset.ratio=1.0 \
             task.dataset.sets=["HUMANISE"] \
             task.evaluator.k_samples=0 \
             task.evaluator.eval_nbatch=32 \

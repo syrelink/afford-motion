@@ -11,6 +11,7 @@ from utils.evaluate import create_evaluator
 from utils.training import load_ckpt
 from utils.misc import compute_repr_dimesion
 
+
 def test(cfg: DictConfig) -> None:
     """ Begin testing with this function
 
@@ -27,11 +28,11 @@ def test(cfg: DictConfig) -> None:
         device = f'cuda:{cfg.gpu}'
     else:
         device = 'cpu'
-    
+
     # prepare testing dataset
     test_dataset = create_dataset(cfg.task.dataset, 'test', gpu=cfg.gpu, **cfg.task.test)
     logger.info(f'Load test dataset size: {len(test_dataset)}')
-    
+
     test_dataloader = test_dataset.get_dataloader(
         batch_size=cfg.task.test.batch_size,
         collate_fn=collate_fn_general,
@@ -51,7 +52,7 @@ def test(cfg: DictConfig) -> None:
 
     ## create evaluator
     evaluator = create_evaluator(cfg.task, device=device)
-    
+
     ## sample
     model.eval()
     sample_fn = diffusion.p_sample_loop
@@ -60,7 +61,8 @@ def test(cfg: DictConfig) -> None:
     sample_list = []
     k_samples_list = []
     if evaluator.k_samples > 0:
-        k_samples_idxs = list(range(evaluator.num_k_samples // B)) # first len(k_samples_idxs) batches will be used for k samples (repeat_times = k_samples)
+        k_samples_idxs = list(range(
+            evaluator.num_k_samples // B))  # first len(k_samples_idxs) batches will be used for k samples (repeat_times = k_samples)
     else:
         k_samples_idxs = []
     logger.info(f'k_samples_idxs: {k_samples_idxs}')
@@ -82,12 +84,12 @@ def test(cfg: DictConfig) -> None:
 
         use_k_sample = i in k_samples_idxs
         repeat_times = evaluator.k_samples if use_k_sample else 1
-        
+
         sample_list_np = []
         k_samples_list_np = []
         for k in range(repeat_times):
             if cfg.model.name.startswith('CMDM'):
-                ## if test with CMDM, the input c_pc_contact contains k samples, 
+                ## if test with CMDM, the input c_pc_contact contains k samples,
                 ## so we need remove this item in x_kwargs, and use the k-th contact map
                 x_kwargs['c_pc_contact'] = data['c_pc_contact'][:, k, :, :].to(device)
 
@@ -103,11 +105,11 @@ def test(cfg: DictConfig) -> None:
             if k == 0:
                 for bsi in range(B):
                     sample_list_np.append(sample[bsi].cpu().numpy())
-            
+
             if use_k_sample:
                 for bsi in range(B):
                     k_samples_list_np.append(sample[bsi].cpu().numpy())
-        
+
         ## 1 sample
         for bsi in range(B):
             res_dict = {'sample': sample_list_np[bsi]}
@@ -117,7 +119,7 @@ def test(cfg: DictConfig) -> None:
                 else:
                     res_dict[key] = data[key][bsi]
             sample_list.append(res_dict)
-        
+
         ## k samples
         if use_k_sample:
             for bsi in range(B):
@@ -128,14 +130,15 @@ def test(cfg: DictConfig) -> None:
                     else:
                         res_dict[key] = data[key][bsi]
                 k_samples_list.append(res_dict)
-        
+
         ## stop evaluation if reach the max number of samples
         if i + 1 >= evaluator.eval_nbatch:
             break
-    
+
     ## compute metrics
     evaluator.evaluate(sample_list, k_samples_list, test_dir, test_dataloader, device=device)
     evaluator.report(test_dir)
+
 
 @hydra.main(version_base=None, config_path="./configs", config_name="default")
 def main(cfg: DictConfig) -> None:
@@ -146,7 +149,7 @@ def main(cfg: DictConfig) -> None:
     """
     ## setup random seed
     SEED = cfg.seed
-    torch.backends.cudnn.benchmark = False     
+    torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
@@ -162,11 +165,12 @@ def main(cfg: DictConfig) -> None:
     mkdir_if_not_exists(cfg.ckpt_dir)
     mkdir_if_not_exists(cfg.eval_dir)
 
-    test(cfg) # testing portal
+    test(cfg)  # testing portal
+
 
 if __name__ == '__main__':
     import torch
     import random
     import numpy as np
-    
+
     main()

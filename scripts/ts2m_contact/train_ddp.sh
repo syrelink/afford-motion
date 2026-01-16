@@ -13,12 +13,11 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --nnodes=1 --nproc_per_node=2 --rdzv_backend=c
             platform=TensorBoard \
             diffusion.steps=500 \
             task=contact_gen \
-            task.train.batch_size=64 \
-            task.train.max_steps=200000 \
-            task.train.save_every_step=100000 \
+            task.train.batch_size=16 \
+            task.train.max_steps=400000 \
+            task.train.save_every_step=50000 \
             task.train.phase=train \
             task.dataset.sigma=0.8 \
             task.dataset.sets=["HUMANISE"] \
             model=cdm \
-            model.arch=Perceiver
-            
+            model.arch=PointMambaUNet
