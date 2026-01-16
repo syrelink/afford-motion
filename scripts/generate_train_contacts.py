@@ -1,4 +1,13 @@
-import os, glob, hydra
+#!/usr/bin/env python3
+"""
+专门用于生成训练集接触点数据的脚本
+基于test.py修改，但专门为训练集生成优化
+"""
+
+import os
+import sys
+import glob
+import hydra
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from natsort import natsorted
@@ -12,30 +21,26 @@ from utils.training import load_ckpt
 from utils.misc import compute_repr_dimesion
 
 
-def test(cfg: DictConfig) -> None:
-    """ Begin testing with this function
+def generate_train_contacts(cfg: DictConfig) -> None:
+    """ 生成训练集接触点数据 """
 
-    Args:
-        cfg: configuration dict
-    """
-    test_dir = os.path.join(cfg.eval_dir, 'test-' + time_str(Y=False))
-    mkdir_if_not_exists(test_dir)
-    logger.add(os.path.join(test_dir, 'test.log'))
+    # 创建专门的输出目录
+    save_dir = os.path.join(cfg.output_dir, 'train_contacts-' + time_str(Y=False))
+    mkdir_if_not_exists(save_dir)
+    logger.add(os.path.join(save_dir, 'generate.log'))
     logger.info('[Configuration]\n' + OmegaConf.to_yaml(cfg) + '\n')
-    logger.info('[Test] ==> Beign testing..')
+    logger.info('[Generate] ==> Begin generating training contacts..')
 
     if cfg.gpu is not None:
         device = f'cuda:{cfg.gpu}'
     else:
         device = 'cpu'
 
-    # prepare testing dataset
-    # 支持通过配置指定phase，默认为'test'
-    phase = cfg.task.dataset.get('phase', 'test')
-    test_dataset = create_dataset(cfg.task.dataset, phase, gpu=cfg.gpu, **cfg.task.test)
-    logger.info(f'Load {phase} dataset size: {len(test_dataset)}')
+    # 关键：使用'train' phase
+    train_dataset = create_dataset(cfg.task.dataset, 'train', gpu=cfg.gpu, **cfg.task.test)
+    logger.info(f'Load train dataset size: {len(train_dataset)}')
 
-    test_dataloader = test_dataset.get_dataloader(
+    train_dataloader = train_dataset.get_dataloader(
         batch_size=cfg.task.test.batch_size,
         collate_fn=collate_fn_general,
         num_workers=cfg.task.test.num_workers,
@@ -43,7 +48,7 @@ def test(cfg: DictConfig) -> None:
         shuffle=False,
     )
 
-    ## create model and load checkpoint
+    ## 创建模型并加载checkpoint
     model, diffusion = create_model_and_diffusion(cfg, device=device)
     model.to(device)
 
@@ -52,24 +57,24 @@ def test(cfg: DictConfig) -> None:
     load_ckpt(model, ckpts[-1])
     logger.info(f'Load checkpoint from {ckpts[-1]}')
 
-    ## create evaluator
+    ## 创建评估器
     evaluator = create_evaluator(cfg.task, device=device)
 
-    ## sample
+    ## 生成样本
     model.eval()
     sample_fn = diffusion.p_sample_loop
 
-    B = test_dataloader.batch_size
+    B = train_dataloader.batch_size
     sample_list = []
     k_samples_list = []
     if evaluator.k_samples > 0:
         k_samples_idxs = list(range(
-            evaluator.num_k_samples // B))  # first len(k_samples_idxs) batches will be used for k samples (repeat_times = k_samples)
+            evaluator.num_k_samples // B))
     else:
         k_samples_idxs = []
     logger.info(f'k_samples_idxs: {k_samples_idxs}')
 
-    for i, data in enumerate(test_dataloader):
+    for i, data in enumerate(train_dataloader):
         logger.info(f"batch index: {i}, is k_sample_batch: {i in k_samples_idxs}, case index: {data['info_index']}")
         x = data['x']
 
@@ -91,8 +96,6 @@ def test(cfg: DictConfig) -> None:
         k_samples_list_np = []
         for k in range(repeat_times):
             if cfg.model.name.startswith('CMDM'):
-                ## if test with CMDM, the input c_pc_contact contains k samples,
-                ## so we need remove this item in x_kwargs, and use the k-th contact map
                 x_kwargs['c_pc_contact'] = data['c_pc_contact'][:, k, :, :].to(device)
 
             sample = sample_fn(
@@ -133,23 +136,27 @@ def test(cfg: DictConfig) -> None:
                         res_dict[key] = data[key][bsi]
                 k_samples_list.append(res_dict)
 
-        ## stop evaluation if reach the max number of samples
+        ## 如果达到最大批次则停止
         if i + 1 >= evaluator.eval_nbatch:
             break
 
-    ## compute metrics
-    evaluator.evaluate(sample_list, k_samples_list, test_dir, test_dataloader, device=device)
-    evaluator.report(test_dir)
+    ## 保存结果
+    evaluator.evaluate(sample_list, k_samples_list, save_dir, train_dataloader, device=device)
+    logger.info(f"✅ 生成完成！数据保存在: {save_dir}")
+
+    # 统计生成的文件数量
+    pred_contact_dir = os.path.join(save_dir, 'H3D/pred_contact')
+    if os.path.exists(pred_contact_dir):
+        file_count = len([f for f in os.listdir(pred_contact_dir) if f.endswith('.npy')])
+        logger.info(f"生成文件数量: {file_count}")
+
+    return save_dir
 
 
-@hydra.main(version_base=None, config_path="./configs", config_name="default")
+@hydra.main(version_base=None, config_path="../configs", config_name="default")
 def main(cfg: DictConfig) -> None:
-    """ Main function
-
-    Args:
-        cfg: configuration dict
-    """
-    ## setup random seed
+    """ 主函数 """
+    ## 设置随机种子
     SEED = cfg.seed
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
@@ -159,15 +166,23 @@ def main(cfg: DictConfig) -> None:
     random.seed(SEED)
     np.random.seed(SEED)
 
-    ## compute modeling dimension
+    ## 计算建模维度
     cfg.model.input_feats = compute_repr_dimesion(cfg.model.data_repr)
 
-    ## set output logger
-    mkdir_if_not_exists(cfg.log_dir)
-    mkdir_if_not_exists(cfg.ckpt_dir)
-    mkdir_if_not_exists(cfg.eval_dir)
+    ## 设置输出目录
+    mkdir_if_not_exists(cfg.output_dir)
 
-    test(cfg)  # testing portal
+    save_dir = generate_train_contacts(cfg)
+
+    # 提供使用说明
+    print("\n" + "="*60)
+    print("✅ 训练集接触点数据生成完成！")
+    print(f"数据目录: {save_dir}")
+    print("\n下一步操作:")
+    print(f"1. 链接到训练目录: ln -sf $(pwd)/{save_dir}/H3D/pred_contact data/H3D/pred_contact")
+    print("2. 配置 stage2 训练使用混合数据 (mix_train_ratio: 0.5)")
+    print("3. 训练 stage2 模型")
+    print("="*60)
 
 
 if __name__ == '__main__':
