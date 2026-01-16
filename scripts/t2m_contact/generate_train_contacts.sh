@@ -36,7 +36,7 @@
 
   python test.py hydra/job_logging=none hydra/hydra_logging=none \
               exp_dir=${EXP_DIR} \
-              seed=${SEED} \
+              seed=2023 \
               output_dir=data/H3D/pred_contact_pointmamba \
               diffusion.steps=500 \
               task=text_to_motion_contact_gen \
@@ -45,11 +45,11 @@
               model.scene_model.use_scene_model=False \
               model.text_model.max_length=20 \
               task.dataset.sigma=0.8 \
-              +task.dataset.phase='train' \                # 关键：覆盖为训练集
-            #   task.evaluator.k_samples=0 \                # 不需要多样本
-            #   task.evaluator.eval_nbatch=10000 \          # 关键：处理大量数据
+              +task.dataset.phase=train \            # 关键：覆盖为训练集
+              task.evaluator.k_samples=0 \                # 不需要多样本
+              task.evaluator.eval_nbatch=10000 \          # 关键：处理大量数据
               task.evaluator.num_k_samples=128 \
-            #   +task.evaluator.save_results=true           # 关键：必须保存结果
+              +task.evaluator.save_results=true           # 关键：必须保存结果
 
   EXIT_CODE=$?
 
