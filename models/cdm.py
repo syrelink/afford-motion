@@ -498,8 +498,7 @@ class CDM(nn.Module):
                     'last_dim': 256
                 })
             CONTACT_MODEL = ContactPointMamba
-    # =========================================================
-        elif self.arch == 'PointMambaUNet':
+
             if hasattr(cfg, 'arch_pointmamba'):
                 self.arch_cfg = cfg.arch_pointmamba
             else:
