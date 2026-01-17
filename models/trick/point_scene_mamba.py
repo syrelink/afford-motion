@@ -121,3 +121,4 @@ class ContactPointMamba(nn.Module):
 
         # --- 5. 输出 ---
         return self.out_proj(x_out)
+    

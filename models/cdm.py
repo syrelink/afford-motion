@@ -10,6 +10,7 @@ from models.functions import load_and_freeze_clip_model, encode_text_clip, \
     load_and_freeze_bert_model, encode_text_bert, get_lang_feat_dim_type
 from models.functions import load_scene_model
 from models.trick.point_scene_mamba import ContactPointMamba
+from models.trick.enhanced_perceiver import EnhancedContactPerceiver
 from models.pointmamba.hilbert import *
 from models.trick.pointmamba_v1 import *
 
@@ -434,7 +435,6 @@ class ContactPointTransV2(nn.Module):
         return rearrange(x1, '(b n) d -> b n d', b=len(offset))  # (b, n, planes[0])
 
 
-
 @Model.register()
 class CDM(nn.Module):
     def __init__(self, cfg: DictConfig, *args, **kwargs):
@@ -480,6 +480,19 @@ class CDM(nn.Module):
         elif self.arch == 'Perceiver':
             self.arch_cfg = cfg.arch_perceiver
             CONTACT_MODEL = ContactPerceiver
+        elif self.arch == 'EnhancedPerceiver':
+            # 增强的 Perceiver 架构
+            if hasattr(cfg, 'arch_enhanced_perceiver'):
+                self.arch_cfg = cfg.arch_enhanced_perceiver
+            else:
+                # 默认配置
+                self.arch_cfg = DictConfig({
+                    'trans_dim': 256,
+                    'last_dim': 256,
+                    'num_neighbors': 16,
+                    'dropout': 0.1,
+                })
+            CONTACT_MODEL = EnhancedContactPerceiver
         elif self.arch == 'PointTrans':
             self.arch_cfg = cfg.arch_pointtrans
             CONTACT_MODEL = ContactPointTrans
@@ -515,7 +528,12 @@ class CDM(nn.Module):
             time_emb_dim=self.time_emb_dim
         )
 
-        self.contact_layer = nn.Linear(self.arch_cfg.last_dim, self.contact_dim, bias=True)
+        # EnhancedContactPerceiver 的输出维度是 last_dim
+        if self.arch == 'EnhancedPerceiver':
+            output_dim = self.arch_cfg.last_dim
+        else:
+            output_dim = self.arch_cfg.last_dim
+        self.contact_layer = nn.Linear(output_dim, self.contact_dim, bias=True)
         # self.contact_layer = nn.Linear(self.arch_cfg.last_dim, self.contact_dim, bias=True)
 
     def forward(self, x, timesteps, **kwargs):
