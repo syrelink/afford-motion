@@ -36,8 +36,8 @@ if [ ! -d "${EXP_DIR}/ckpt" ]; then
 fi
 
 # 检查是否有 checkpoint 文件
-if [ ! -f "${EXP_DIR}/ckpt/model*.pt" ]; then
-    echo "警告: 在 ${EXP_DIR}/ckpt/ 中未找到 model*.pt 文件"
+if [ ! -f "${EXP_DIR}/ckpt/model300000.pt" ]; then
+    echo "警告: 在 ${EXP_DIR}/ckpt/ 中未找到 model300000.pt 文件"
     echo "请确保 checkpoint 文件存在"
     echo "继续执行..."
 fi

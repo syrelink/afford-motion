@@ -51,7 +51,9 @@ def train_contact_gen(cfg: DictConfig) -> None:
 
     # Prepare training dataset
     phase = cfg.task.dataset.get('phase', 'train')
-    train_dataset = create_dataset(cfg.task.dataset, phase, gpu=cfg.gpu, **cfg.task.train)
+    # Remove phase from task.train to avoid duplicate argument
+    train_kwargs = {k: v for k, v in cfg.task.train.items() if k != 'phase'}
+    train_dataset = create_dataset(cfg.task.dataset, phase, gpu=cfg.gpu, **train_kwargs)
     logger.info(f'Load {phase} dataset size: {len(train_dataset)}')
 
     train_dataloader = train_dataset.get_dataloader(
