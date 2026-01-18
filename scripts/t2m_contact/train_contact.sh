@@ -43,10 +43,17 @@ if [ ! -f "${EXP_DIR}/ckpt/model300000.pt" ]; then
 fi
 
 # 运行训练数据生成
+# 处理GPU参数：如果是多个GPU，转换为列表格式
+if [[ "${GPU}" == *","* ]]; then
+    GPU_PARAM="[${GPU//,/, }]"
+else
+    GPU_PARAM="${GPU}"
+fi
+
 python train_contact_gen.py hydra/job_logging=none hydra/hydra_logging=none \
             exp_dir=${EXP_DIR} \
             seed=${SEED} \
-            gpu=${GPU} \
+            gpu=${GPU_PARAM} \
             output_dir=outputs \
             exp_name=cdm_first_stage \
             task=contact_gen_train \
