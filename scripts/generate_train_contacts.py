@@ -31,6 +31,16 @@ def generate_train_contacts(cfg: DictConfig) -> None:
     logger.info('[Configuration]\n' + OmegaConf.to_yaml(cfg) + '\n')
     logger.info('[Generate] ==> Begin generating training contacts..')
 
+    # 检查是否已有部分生成的数据（断点续传）
+    checkpoint_file = os.path.join(save_dir, 'checkpoint.txt')
+    start_batch = 0
+    if os.path.exists(checkpoint_file):
+        with open(checkpoint_file, 'r') as f:
+            start_batch = int(f.read().strip())
+        logger.info(f'Found checkpoint, resuming from batch {start_batch}')
+    else:
+        logger.info(f'No checkpoint found, starting from batch 0')
+
     if cfg.gpu is not None:
         device = f'cuda:{cfg.gpu}'
     else:
@@ -75,6 +85,12 @@ def generate_train_contacts(cfg: DictConfig) -> None:
     logger.info(f'k_samples_idxs: {k_samples_idxs}')
 
     for i, data in enumerate(train_dataloader):
+        # 断点续传：跳过已处理的批次
+        if i < start_batch:
+            if i % 10 == 0:
+                logger.info(f"Skipping batch {i} (already processed)")
+            continue
+
         logger.info(f"batch index: {i}, is k_sample_batch: {i in k_samples_idxs}, case index: {data['info_index']}")
         x = data['x']
 
@@ -96,7 +112,13 @@ def generate_train_contacts(cfg: DictConfig) -> None:
         k_samples_list_np = []
         for k in range(repeat_times):
             if cfg.model.name.startswith('CMDM'):
-                x_kwargs['c_pc_contact'] = data['c_pc_contact'][:, k, :, :].to(device)
+                # 修复：检查 c_pc_contact 的维度
+                if len(data['c_pc_contact'].shape) == 4:
+                    # 有 k 维度: [B, k, N, D]
+                    x_kwargs['c_pc_contact'] = data['c_pc_contact'][:, k, :, :].to(device)
+                else:
+                    # 无 k 维度: [B, N, D]
+                    x_kwargs['c_pc_contact'] = data['c_pc_contact'].to(device)
 
             sample = sample_fn(
                 model,
@@ -109,14 +131,23 @@ def generate_train_contacts(cfg: DictConfig) -> None:
 
             if k == 0:
                 for bsi in range(B):
-                    sample_list_np.append(sample[bsi].cpu().numpy())
+                    # 修复：检查 sample 的维度
+                    if bsi < sample.shape[0]:
+                        sample_list_np.append(sample[bsi].cpu().numpy())
+                    else:
+                        logger.warning(f"Warning: bsi {bsi} >= sample.shape[0] {sample.shape[0]}")
 
             if use_k_sample:
                 for bsi in range(B):
-                    k_samples_list_np.append(sample[bsi].cpu().numpy())
+                    if bsi < sample.shape[0]:
+                        k_samples_list_np.append(sample[bsi].cpu().numpy())
+                    else:
+                        logger.warning(f"Warning (k_samples): bsi {bsi} >= sample.shape[0] {sample.shape[0]}")
 
         ## 1 sample
-        for bsi in range(B):
+        # 修复：使用实际的样本数量，而不是 batch_size
+        actual_batch_size = len(sample_list_np)
+        for bsi in range(actual_batch_size):
             res_dict = {'sample': sample_list_np[bsi]}
             for key in data:
                 if torch.is_tensor(data[key]):
@@ -127,14 +158,21 @@ def generate_train_contacts(cfg: DictConfig) -> None:
 
         ## k samples
         if use_k_sample:
-            for bsi in range(B):
-                res_dict = {'k_samples': np.stack(k_samples_list_np[bsi::B])}
+            actual_batch_size = len(sample_list_np)
+            for bsi in range(actual_batch_size):
+                res_dict = {'k_samples': np.stack(k_samples_list_np[bsi::actual_batch_size])}
                 for key in data:
                     if torch.is_tensor(data[key]):
                         res_dict[key] = data[key][bsi].cpu().numpy()
                     else:
                         res_dict[key] = data[key][bsi]
                 k_samples_list.append(res_dict)
+
+        ## 保存断点（每10个batch保存一次）
+        if (i + 1) % 10 == 0:
+            with open(checkpoint_file, 'w') as f:
+                f.write(str(i + 1))
+            logger.info(f"Checkpoint saved: batch {i + 1}")
 
         ## 如果达到最大批次则停止
         if i + 1 >= evaluator.eval_nbatch:
