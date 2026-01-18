@@ -9,7 +9,7 @@ from models.scene_models.pointtransformer import TransitionDown, TransitionUp, P
 from models.functions import load_and_freeze_clip_model, encode_text_clip, \
     load_and_freeze_bert_model, encode_text_bert, get_lang_feat_dim_type
 from models.functions import load_scene_model
-
+from models.trick.point_scene_mamba import ContactPointMamba
 
 class PointSceneMLP(nn.Module):
 
@@ -482,6 +482,19 @@ class CDM(nn.Module):
         elif self.arch == 'PointTransV2':
             self.arch_cfg = cfg.arch_pointtrans
             CONTACT_MODEL = ContactPointTransV2
+        # [新增] PointMamba 分支
+        elif self.arch == 'PointMamba':
+            # 如果 config 里没有 arch_pointmamba，给一个默认配置防止报错
+            if hasattr(cfg, 'arch_pointmamba'):
+                self.arch_cfg = cfg.arch_pointmamba
+            else:
+                self.arch_cfg = DictConfig({
+                    'trans_dim': 256,
+                    'depth': 8,
+                    'last_dim': 256
+                })
+            CONTACT_MODEL = ContactPointMamba
+    # =========================================================
         else:
             raise NotImplementedError
         self.contact_model = CONTACT_MODEL(
