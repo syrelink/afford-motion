@@ -14,3 +14,4 @@ python train.py hydra/job_logging=none hydra/hydra_logging=none \
             model.arch=Perceiver \
             model.scene_model.use_scene_model=False \
             model.text_model.max_length=20
+
