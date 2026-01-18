@@ -2,6 +2,7 @@
 
 # 训练脚本：生成 CDM 第一阶段训练数据集
 # 使用 ContactPointMamba 架构
+# 支持多GPU并行生成
 
 EXP_DIR=$1
 GPU=$2
@@ -19,7 +20,7 @@ then
 fi
 
 echo "=========================================="
-echo "CDM 第一阶段训练数据生成"
+echo "CDM 第一阶段训练数据生成 (多GPU)"
 echo "=========================================="
 echo "Checkpoint 目录: ${EXP_DIR}"
 echo "GPU: ${GPU}"
@@ -49,8 +50,8 @@ python train_contact_gen.py hydra/job_logging=none hydra/hydra_logging=none \
             output_dir=outputs \
             exp_name=cdm_first_stage \
             task=contact_gen_train \
-            task.train.batch_size=32 \
-            task.train.num_workers=4 \
+            task.train.batch_size=64 \
+            task.train.num_workers=8 \
             task.train.phase=train \
             model=cdm \
             model.arch=PointMamba \

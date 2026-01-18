@@ -30,11 +30,24 @@ def train_contact_gen(cfg: DictConfig) -> None:
     logger.info('[Configuration]\\n' + OmegaConf.to_yaml(cfg) + '\\n')
     logger.info('[Train Contact Gen] ==> Begin generating training data..')
 
-    # Device setup
+    # Device setup - support multi-GPU
     if cfg.gpu is not None:
-        device = f'cuda:{cfg.gpu}'
+        # Check if multiple GPUs are specified
+        if isinstance(cfg.gpu, list):
+            devices = [f'cuda:{gpu}' for gpu in cfg.gpu]
+            num_gpus = len(devices)
+            device = devices[0]  # Use first GPU for dataset loading
+            logger.info(f'Using {num_gpus} GPUs: {devices}')
+        else:
+            devices = [f'cuda:{cfg.gpu}']
+            num_gpus = 1
+            device = devices[0]
+            logger.info(f'Using single GPU: {device}')
     else:
+        devices = ['cpu']
+        num_gpus = 0
         device = 'cpu'
+        logger.info('Using CPU')
 
     # Prepare training dataset
     phase = cfg.task.dataset.get('phase', 'train')
@@ -53,6 +66,11 @@ def train_contact_gen(cfg: DictConfig) -> None:
     model, diffusion = create_model_and_diffusion(cfg, device=device)
     model.to(device)
 
+    # Wrap model with DataParallel for multi-GPU
+    if num_gpus > 1:
+        model = torch.nn.DataParallel(model, device_ids=devices)
+        logger.info(f'Model wrapped with DataParallel for {num_gpus} GPUs')
+
     # Load checkpoint
     ckpts = natsorted(glob.glob(os.path.join(cfg.exp_dir, 'ckpt', 'model*.pt')))
     assert len(ckpts) > 0, 'No checkpoint found.'
@@ -65,6 +83,7 @@ def train_contact_gen(cfg: DictConfig) -> None:
     logger.info(f'Output directory: {train_dir}')
     logger.info(f'Dataset size: {len(train_dataset)}')
     logger.info(f'Batch size: {train_dataloader.batch_size}')
+    logger.info(f'Number of GPUs: {num_gpus}')
 
     ## Create evaluator
     evaluator = create_evaluator(cfg.task, device=device)
@@ -89,6 +108,7 @@ def train_contact_gen(cfg: DictConfig) -> None:
         f.write(f'Output directory: {train_dir}\\n')
         f.write(f'Dataset size: {len(train_dataset)}\\n')
         f.write(f'Batch size: {B}\\n')
+        f.write(f'Number of GPUs: {num_gpus}\\n')
         f.write(f'\\nConfiguration:\\n{OmegaConf.to_yaml(cfg)}\\n')
 
     # Process each batch
@@ -182,6 +202,7 @@ def train_contact_gen(cfg: DictConfig) -> None:
     logger.info(f'Total {len(sample_list)} samples generated')
     logger.info(f'Output directory: {train_dir}')
     logger.info(f'Final data file: {final_save_path}')
+    logger.info(f'Number of GPUs used: {num_gpus}')
 
 
 @hydra.main(version_base=None, config_path="./configs", config_name="default")

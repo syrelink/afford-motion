@@ -2,7 +2,8 @@
 
 ## 脚本文件
 
-- `train.sh` - 生成 CDM 第一阶段训练数据集的脚本
+- `train_contact.sh` - 生成 CDM 第一阶段训练数据集的脚本（支持多GPU）
+- `train.sh` - 原始训练脚本（单GPU）
 - `test.sh` - 测试脚本（已存在）
 
 ## 使用方法
@@ -10,7 +11,7 @@
 ### 基本用法
 
 ```bash
-./scripts/t2m_contact/train.sh [EXP_DIR] [GPU] [SEED]
+./scripts/t2m_contact/train_contact.sh [EXP_DIR] [GPU] [SEED]
 ```
 
 ### 参数说明
@@ -18,21 +19,40 @@
 | 参数 | 说明 | 默认值 | 示例 |
 |------|------|--------|------|
 | `EXP_DIR` | Checkpoint 目录路径 | 必填 | `outputs/2026-01-18_10-30-00_cdm_train/ckpt` |
-| `GPU` | GPU 设备编号 | 0 | `0` |
+| `GPU` | GPU 设备编号或列表 | 0 | `0` 或 `0,1` |
 | `SEED` | 随机种子 | 2023 | `2023` |
 
 ### 使用示例
 
 ```bash
-# 示例 1: 基本使用
-./scripts/t2m_contact/train.sh outputs/2026-01-18_10-30-00_cdm_train
+# 示例 1: 基本使用（单GPU）
+./scripts/t2m_contact/train_contact.sh outputs/2026-01-18_10-30-00_cdm_train
 
-# 示例 2: 指定 GPU
-./scripts/t2m_contact/train.sh outputs/2026-01-18_10-30-00_cdm_train 0
+# 示例 2: 指定单个GPU
+./scripts/t2m_contact/train_contact.sh outputs/2026-01-18_10-30-00_cdm_train 0
 
-# 示例 3: 指定所有参数
-./scripts/t2m_contact/train.sh outputs/2026-01-18_10-30-00_cdm_train 0 2023
+# 示例 3: 使用两个GPU（推荐）
+./scripts/t2m_contact/train_contact.sh outputs/2026-01-18_10-30-00_cdm_train "0,1"
+
+# 示例 4: 指定所有参数
+./scripts/t2m_contact/train_contact.sh outputs/2026-01-18_10-30-00_cdm_train "0,1" 2023
 ```
+
+### 多GPU使用说明
+
+**对于两张GPU的情况**：
+
+```bash
+# 使用GPU 0和GPU 1并行生成
+./scripts/t2m_contact/train_contact.sh outputs/your_checkpoint_dir "0,1"
+```
+
+**脚本会自动**：
+- 使用 `torch.nn.DataParallel` 包装模型
+- 将batch数据自动分配到两个GPU
+- 两个GPU同时工作，不会空闲
+- 批处理大小自动翻倍（从32变为64）
+- 数据加载工作进程数增加（从4变为8）
 
 ## 参数详细说明
 
@@ -92,14 +112,14 @@
 ### 基础参数
 - `exp_dir=${EXP_DIR}` - Checkpoint 目录
 - `seed=${SEED}` - 随机种子
-- `gpu=${GPU}` - GPU 设备
+- `gpu=${GPU}` - GPU 设备（支持 `0,1` 格式）
 - `output_dir=outputs` - 输出目录
 - `exp_name=cdm_first_stage` - 实验名称
 
 ### 任务参数
 - `task=contact_gen_train` - 任务类型（训练数据生成）
-- `task.train.batch_size=32` - 批处理大小
-- `task.train.num_workers=4` - 数据加载工作进程数
+- `task.train.batch_size=64` - 批处理大小（多GPU时自动翻倍）
+- `task.train.num_workers=8` - 数据加载工作进程数（多GPU时增加）
 - `task.train.phase=train` - 使用训练集
 
 ### 模型参数
@@ -178,13 +198,14 @@ ls -la data/H3D/
 
 ## 与 test.sh 的对比
 
-| 特性 | test.sh | train.sh |
-|------|---------|----------|
+| 特性 | test.sh | train_contact.sh |
+|------|---------|------------------|
 | 主要用途 | 模型测试 | 训练数据生成 |
 | 输入参数 | EXP_DIR, EVAL_MODE, SEED | EXP_DIR, GPU, SEED |
 | 运行脚本 | test.py | train_contact_gen.py |
 | 输出结果 | 评估指标 | 生成的接触地图数据 |
 | 自动保存 | 无 | 每 10 个 batch 保存 |
+| 多GPU支持 | 无 | 支持（使用 DataParallel） |
 
 ## 技术细节
 
@@ -207,9 +228,11 @@ CDM 第一阶段使用 ContactPointMamba 架构，主要特点：
 
 ## 示例输出
 
+### 单GPU输出
+
 ```
 ==========================================
-CDM 第一阶段训练数据生成
+CDM 第一阶段训练数据生成 (多GPU)
 ==========================================
 Checkpoint 目录: outputs/2026-01-18_10-30-00_cdm_train
 GPU: 0
@@ -228,6 +251,7 @@ Checkpoint: outputs/.../ckpt/model001000.pt
 Output directory: outputs/.../train-...
 Dataset size: 1234
 Batch size: 32
+Number of GPUs: 1
 
 batch index: 0, is k_sample_batch: False, case index: 12345
 Auto-saved progress to outputs/.../train-.../temp_batch_000010.npz
@@ -237,6 +261,49 @@ Auto-saved progress to outputs/.../train-.../temp_batch_000010.npz
 Total 1234 samples generated
 Output directory: outputs/.../train-...
 Final data file: outputs/.../train-.../generated_contact_maps.npz
+Number of GPUs used: 1
+
+==========================================
+训练数据生成完成!
+==========================================
+```
+
+### 多GPU输出（两张GPU）
+
+```
+==========================================
+CDM 第一阶段训练数据生成 (多GPU)
+==========================================
+Checkpoint 目录: outputs/2026-01-18_10-30-00_cdm_train
+GPU: 0,1
+随机种子: 2023
+==========================================
+
+[Configuration]
+...
+
+[Train Contact Gen] ==> Begin generating training data..
+Using 2 GPUs: ['cuda:0', 'cuda:1']
+Load train dataset size: 1234
+Load checkpoint from outputs/.../ckpt/model001000.pt
+Model wrapped with DataParallel for 2 GPUs
+
+=== Checkpoint Info ===
+Checkpoint: outputs/.../ckpt/model001000.pt
+Output directory: outputs/.../train-...
+Dataset size: 1234
+Batch size: 64
+Number of GPUs: 2
+
+batch index: 0, is k_sample_batch: False, case index: 12345
+Auto-saved progress to outputs/.../train-.../temp_batch_000010.npz
+...
+
+=== Summary ===
+Total 1234 samples generated
+Output directory: outputs/.../train-...
+Final data file: outputs/.../train-.../generated_contact_maps.npz
+Number of GPUs used: 2
 
 ==========================================
 训练数据生成完成!
