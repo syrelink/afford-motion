@@ -13,7 +13,7 @@ from utils.misc import compute_repr_dimesion
 from models.trick.mamba_block import *
 # from models.trick.mamba_cross import *
 # from models.trick.mamba_block_AdaLN import *
-from models.trick.rwkv_block import BidirectionalRWKVBlock
+# from models.trick.rwkv_block import BidirectionalRWKVBlock
 from models.trick.dit_block import DiTBlock, DiTBlockWithCrossAttention, ConditionEmbedder, FinalLayer
 
 
