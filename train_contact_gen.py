@@ -32,11 +32,18 @@ def train_contact_gen(cfg: DictConfig) -> None:
 
     # Device setup - support multi-GPU
     if cfg.gpu is not None:
-        # Check if multiple GPUs are specified
-        if isinstance(cfg.gpu, list):
-            devices = [f'cuda:{gpu}' for gpu in cfg.gpu]
+        # Check if multiple GPUs are specified (string format "0,1" or list)
+        if isinstance(cfg.gpu, str) and ',' in cfg.gpu:
+            # Parse string like "0,1" to list [0, 1]
+            gpu_ids = [int(g.strip()) for g in cfg.gpu.split(',')]
+            devices = [f'cuda:{gpu_id}' for gpu_id in gpu_ids]
             num_gpus = len(devices)
             device = devices[0]  # Use first GPU for dataset loading
+            logger.info(f'Using {num_gpus} GPUs: {devices}')
+        elif isinstance(cfg.gpu, list):
+            devices = [f'cuda:{gpu}' for gpu in cfg.gpu]
+            num_gpus = len(devices)
+            device = devices[0]
             logger.info(f'Using {num_gpus} GPUs: {devices}')
         else:
             devices = [f'cuda:{cfg.gpu}']
