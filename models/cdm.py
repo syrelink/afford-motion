@@ -2,17 +2,13 @@ import torch
 import torch.nn as nn
 from einops import rearrange, einsum
 from omegaconf import DictConfig
-from mamba_ssm import Mamba
+
 from models.base import Model
 from models.modules import TimestepEmbedder, CrossAttentionLayer, SelfAttentionBlock
 from models.scene_models.pointtransformer import TransitionDown, TransitionUp, PointTransformerBlock
 from models.functions import load_and_freeze_clip_model, encode_text_clip, \
     load_and_freeze_bert_model, encode_text_bert, get_lang_feat_dim_type
 from models.functions import load_scene_model
-from models.trick.point_scene_mamba import ContactPointMamba
-from models.trick.enhanced_perceiver import EnhancedContactPerceiver
-from models.pointmamba.hilbert import *
-from models.trick.pointmamba_v1 import *
 
 
 class PointSceneMLP(nn.Module):
@@ -480,44 +476,12 @@ class CDM(nn.Module):
         elif self.arch == 'Perceiver':
             self.arch_cfg = cfg.arch_perceiver
             CONTACT_MODEL = ContactPerceiver
-        elif self.arch == 'EnhancedPerceiver':
-            # 增强的 Perceiver 架构
-            if hasattr(cfg, 'arch_enhanced_perceiver'):
-                self.arch_cfg = cfg.arch_enhanced_perceiver
-            else:
-                # 默认配置
-                self.arch_cfg = DictConfig({
-                    'trans_dim': 256,
-                    'last_dim': 256,
-                    'num_neighbors': 16,
-                    'dropout': 0.1,
-                })
-            CONTACT_MODEL = EnhancedContactPerceiver
         elif self.arch == 'PointTrans':
             self.arch_cfg = cfg.arch_pointtrans
             CONTACT_MODEL = ContactPointTrans
         elif self.arch == 'PointTransV2':
             self.arch_cfg = cfg.arch_pointtrans
             CONTACT_MODEL = ContactPointTransV2
-        # [新增] PointMamba 分支
-        elif self.arch == 'PointMamba':
-            # 如果 config 里没有 arch_pointmamba，给一个默认配置防止报错
-            if hasattr(cfg, 'arch_pointmamba'):
-                self.arch_cfg = cfg.arch_pointmamba
-            else:
-                self.arch_cfg = DictConfig({
-                    'trans_dim': 256,
-                    'depth': 8,
-                    'last_dim': 256
-                })
-            CONTACT_MODEL = ContactPointMamba
-
-            if hasattr(cfg, 'arch_pointmamba'):
-                self.arch_cfg = cfg.arch_pointmamba
-            else:
-                # 给定默认配置防止报错
-                self.arch_cfg = DictConfig({'base_dim': 128})
-            CONTACT_MODEL = HighResPointMambaUNet
         else:
             raise NotImplementedError
         self.contact_model = CONTACT_MODEL(
@@ -528,13 +492,7 @@ class CDM(nn.Module):
             time_emb_dim=self.time_emb_dim
         )
 
-        # EnhancedContactPerceiver 的输出维度是 last_dim
-        if self.arch == 'EnhancedPerceiver':
-            output_dim = self.arch_cfg.last_dim
-        else:
-            output_dim = self.arch_cfg.last_dim
-        self.contact_layer = nn.Linear(output_dim, self.contact_dim, bias=True)
-        # self.contact_layer = nn.Linear(self.arch_cfg.last_dim, self.contact_dim, bias=True)
+        self.contact_layer = nn.Linear(self.arch_cfg.last_dim, self.contact_dim, bias=True)
 
     def forward(self, x, timesteps, **kwargs):
         """ Forward pass of the model.
@@ -576,8 +534,6 @@ class CDM(nn.Module):
                 (kwargs['c_pc_xyz'], kwargs['c_pc_feat'])).detach()  # [bs, num_points, point_feat_dim]
 
         x = self.contact_model(x, pc_emb, text_emb, time_emb, **kwargs)  # [bs, num_points, last_dim]
-
-
         x = self.contact_layer(x)  # [bs, num_points, contact_dim]
 
         return x

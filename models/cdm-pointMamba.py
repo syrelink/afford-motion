@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 from einops import rearrange, einsum
 from omegaconf import DictConfig
-from models.point_mamba_scan import *
-from timm.models.layers import trunc_normal_
-import torch.nn.functional as F
 
 from models.base import Model
 from models.modules import TimestepEmbedder, CrossAttentionLayer, SelfAttentionBlock
@@ -41,6 +38,56 @@ class PointSceneMLP(nn.Module):
         point_feat = self.mlp_post(point_feat)
 
         return point_feat
+
+
+class ContactMLP(nn.Module):
+
+    def __init__(self, arch_cfg: DictConfig, contact_dim: int, point_feat_dim: int, text_feat_dim: int,
+                 time_emb_dim: int) -> None:
+        super().__init__()
+
+        self.point_mlp_dims = arch_cfg.point_mlp_dims
+        self.point_mlp_widening_factor = arch_cfg.point_mlp_widening_factor
+        self.point_mlp_bias = arch_cfg.point_mlp_bias
+
+        layers = []
+        idim = contact_dim + point_feat_dim + text_feat_dim + time_emb_dim
+        for odim in self.point_mlp_dims:
+            layers.append(
+                PointSceneMLP(idim, odim, widening_factor=self.point_mlp_widening_factor, bias=self.point_mlp_bias))
+            idim = odim
+        self.point_mlp = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor, point_feat: torch.Tensor, language_feat: torch.Tensor,
+                time_embedding: torch.Tensor, **kwargs) -> torch.Tensor:
+        """ Forward pass of the ContactMLP.
+
+        Args:
+            x: input contact map, [bs, num_points, contact_dim]
+            point_feat: [bs, num_points, point_feat_dim]
+            language_feat: [bs, 1, language_feat_dim]
+            time_embedding: [bs, 1, time_embedding_dim]
+
+        Returns:
+            Output contact map, [bs, num_points, contact_dim]
+        """
+        if point_feat is not None:
+            bs, num_points, point_feat_dim = point_feat.shape
+            x = torch.cat([
+                x,
+                point_feat,
+                language_feat.repeat(1, num_points, 1),
+                time_embedding.repeat(1, num_points, 1)
+            ], dim=-1)  # [bs, num_points, contact_dim + point_feat_dim + language_feat_dim + time_embedding_dim]
+        else:
+            x = torch.cat([
+                x,
+                language_feat.repeat(1, num_points, 1),
+                time_embedding.repeat(1, num_points, 1)
+            ], dim=-1)  # [bs, num_points, contact_dim + language_feat_dim + time_embedding_dim]
+        x = self.point_mlp(x)  # [bs, num_points, point_mlp_dim[-1]]
+
+        return x
 
 
 class ContactPerceiver(nn.Module):
@@ -384,144 +431,6 @@ class ContactPointTransV2(nn.Module):
         return rearrange(x1, '(b n) d -> b n d', b=len(offset))  # (b, n, planes[0])
 
 
-class MambaFeatureEncoder(nn.Module):
-    """
-    轻量级特征投影层，用于将拼接后的高维特征映射到 Mamba 的隐层维度。
-    """
-
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_channels, 128),
-            nn.LayerNorm(128),
-            nn.GELU(),
-            nn.Linear(128, out_channels),
-            nn.LayerNorm(out_channels)
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-
-class ContactPointMamba(nn.Module):
-    def __init__(self, arch_cfg: DictConfig, contact_dim: int, point_feat_dim: int, text_feat_dim: int,
-                 time_emb_dim: int) -> None:
-        super().__init__()
-
-        self.trans_dim = getattr(arch_cfg, 'trans_dim', 384)
-        self.depth = getattr(arch_cfg, 'depth', 12)
-        self.drop_path_rate = getattr(arch_cfg, 'drop_path', 0.1)
-        self.rms_norm = getattr(arch_cfg, 'rms_norm', False)
-
-        self.point_pos_emb = getattr(arch_cfg, 'point_pos_emb', True)
-        xyz_dim = 3 if self.point_pos_emb else 0
-
-        # 输入维度 = Contact + SceneFeat + Text + Time + XYZ
-        self.in_channels = contact_dim + point_feat_dim + text_feat_dim + time_emb_dim + xyz_dim
-
-        self.embedding = MambaFeatureEncoder(in_channels=self.in_channels, out_channels=self.trans_dim)
-
-        self.pos_embed = nn.Sequential(
-            nn.Linear(3, 128),
-            nn.GELU(),
-            nn.Linear(128, self.trans_dim)
-        )
-
-        dpr = [x.item() for x in torch.linspace(0, self.drop_path_rate, self.depth)]
-        self.blocks = MixerModel(
-            d_model=self.trans_dim,
-            n_layer=self.depth,
-            rms_norm=self.rms_norm,
-            drop_path=dpr
-        )
-
-        self.OrderScale_gamma_1, self.OrderScale_beta_1 = init_OrderScale(self.trans_dim)
-        self.OrderScale_gamma_2, self.OrderScale_beta_2 = init_OrderScale(self.trans_dim)
-
-        # 由于融合了双向特征(concat)，输入维度变为 2 * trans_dim
-        self.output_proj = nn.Linear(self.trans_dim * 2, arch_cfg.last_dim)
-
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-
-    def forward(self, x: torch.Tensor, point_feat: torch.Tensor, language_feat: torch.Tensor,
-                time_embedding: torch.Tensor, **kwargs) -> torch.Tensor:
-
-        bs, num_points, _ = x.shape
-        xyz = kwargs['c_pc_xyz']
-
-        # 1. 特征融合
-        text_rep = language_feat.repeat(1, num_points, 1)
-        time_rep = time_embedding.repeat(1, num_points, 1)
-
-        features_list = [x, text_rep, time_rep]
-        if point_feat is not None:
-            features_list.append(point_feat)
-        if self.point_pos_emb:
-            features_list.append(xyz)
-
-        fusion_feat = torch.cat(features_list, dim=-1)
-
-        # 2. Embedding
-        x_emb = self.embedding(fusion_feat)
-        pos_emb = self.pos_embed(xyz)
-
-        # 3. 双向 Hilbert 序列化
-        # inverse_xxx 的形状是 [1, B*N]，包含从 0 到 B*N-1 的全局索引
-        _, _, inverse_fwd, x_fwd, pos_fwd = serialization_func(xyz, x_emb, pos_emb, 'hilbert')
-        _, _, inverse_bwd, x_bwd, pos_bwd = serialization_func(xyz, x_emb, pos_emb, 'hilbert-trans')
-
-        # 4. Order Scale
-        x_fwd = apply_OrderScale(x_fwd, self.OrderScale_gamma_1, self.OrderScale_beta_1)
-        x_bwd = apply_OrderScale(x_bwd, self.OrderScale_gamma_2, self.OrderScale_beta_2)
-
-        # 5. 序列拼接 (Batch, 2N, C)
-        # 注意：这里 tokens_seq 是 [B, 2N, C]
-        tokens_seq = torch.cat([x_fwd, x_bwd], dim=1)
-        pos_seq = torch.cat([pos_fwd, pos_bwd], dim=1)
-
-        # 6. Mamba Forward
-        out_seq = self.blocks(tokens_seq, pos_seq)
-
-        # 7. 特征拆分与还原 【核心修复区域】
-        # 拆分前向和后向结果
-        out_fwd = out_seq[:, :num_points, :]  # [B, N, C]
-        out_bwd = out_seq[:, num_points:, :]  # [B, N, C]
-
-        # 将特征展平为 [B*N, C]，以匹配全局索引 inverse_xxx
-        out_fwd_flat = out_fwd.reshape(bs * num_points, self.trans_dim)
-        out_bwd_flat = out_bwd.reshape(bs * num_points, self.trans_dim)
-
-        # 展平索引 [B*N]
-        inv_fwd_flat = inverse_fwd.view(-1)
-        inv_bwd_flat = inverse_bwd.view(-1)
-
-        # 使用全局索引还原顺序
-        # logic: original[i] = sorted[inverse[i]]
-        x_rec_fwd_flat = out_fwd_flat[inv_fwd_flat]
-        x_rec_bwd_flat = out_bwd_flat[inv_bwd_flat]
-
-        # 恢复形状为 [B, N, C]
-        x_rec_fwd = x_rec_fwd_flat.view(bs, num_points, self.trans_dim)
-        x_rec_bwd = x_rec_bwd_flat.view(bs, num_points, self.trans_dim)
-
-        # 8. 双向特征融合 (Concatenate)
-        final_feat = torch.cat([x_rec_fwd, x_rec_bwd], dim=-1)  # (B, N, 2*C)
-
-        # 9. 输出映射
-        out = self.output_proj(final_feat)
-
-        return out
-
-
 @Model.register()
 class CDM(nn.Module):
     def __init__(self, cfg: DictConfig, *args, **kwargs):
@@ -561,8 +470,10 @@ class CDM(nn.Module):
 
         ## model architecture
         self.arch = cfg.arch
-
-        if self.arch == 'Perceiver':
+        if self.arch == 'MLP':
+            self.arch_cfg = cfg.arch_mlp
+            CONTACT_MODEL = ContactMLP
+        elif self.arch == 'Perceiver':
             self.arch_cfg = cfg.arch_perceiver
             CONTACT_MODEL = ContactPerceiver
         elif self.arch == 'PointTrans':
@@ -571,11 +482,6 @@ class CDM(nn.Module):
         elif self.arch == 'PointTransV2':
             self.arch_cfg = cfg.arch_pointtrans
             CONTACT_MODEL = ContactPointTransV2
-        # --- 新增 PointMamba 分支 ---
-        elif self.arch == 'PointMamba':
-            self.arch_cfg = cfg.arch_pointmamba  # 记得在 config 中添加对应配置
-            CONTACT_MODEL = ContactPointMamba
-        # ---------------------------
         else:
             raise NotImplementedError
         self.contact_model = CONTACT_MODEL(
@@ -589,6 +495,15 @@ class CDM(nn.Module):
         self.contact_layer = nn.Linear(self.arch_cfg.last_dim, self.contact_dim, bias=True)
 
     def forward(self, x, timesteps, **kwargs):
+        """ Forward pass of the model.
+
+        Args:
+            x: input contact map, [bs, num_points, contact_dim]
+            kwargs: other inputs, e.g., text, etc.
+
+        Returns:
+            Output contact map, [bs, num_points, contact_dim]
+        """
         ## time embedding
         time_emb = self.timestep_embedder(timesteps)  # [bs, 1, time_emb_dim]
 
@@ -618,10 +533,7 @@ class CDM(nn.Module):
             pc_emb = self.scene_model(
                 (kwargs['c_pc_xyz'], kwargs['c_pc_feat'])).detach()  # [bs, num_points, point_feat_dim]
 
-        # 【核心修正】: 移除手动拼接逻辑，统一使用接口调用
-        # ContactPointMamba 内部会自动处理 features 的拼接
-        x = self.contact_model(x, pc_emb, text_emb, time_emb, **kwargs)
-
+        x = self.contact_model(x, pc_emb, text_emb, time_emb, **kwargs)  # [bs, num_points, last_dim]
         x = self.contact_layer(x)  # [bs, num_points, contact_dim]
 
         return x
