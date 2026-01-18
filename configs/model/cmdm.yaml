@@ -47,3 +47,25 @@ num_layers: [1,1,1,1,1]
 num_heads: 8
 dropout: 0.1
 dim_feedforward: 1024
+
+# =============================================================================
+# DiT (Diffusion Transformer) 架构配置
+# =============================================================================
+# 使用方法: 将 arch 改为 'dit' 或 'dit_cross'
+#
+# arch: 'dit'           # 纯DiT: 使用AdaLN注入条件，条件通过cross-attn pooling融合
+# arch: 'dit_cross'     # DiT+Cross: AdaLN + 每层对contact做cross-attention
+#
+# DiT 特有参数:
+# dit_drop_path: 0.1              # Stochastic Depth rate (线性增长)
+# dit_use_cross_attn_pooling: true  # 用cross-attention聚合contact特征 (仅dit)
+#
+# 推荐配置 (HumanML3D):
+# arch: 'dit'
+# latent_dim: 512
+# num_layers: [1,1,1,1,1,1,1,1]   # 总共8层DiT blocks
+# num_heads: 8
+# dim_feedforward: 2048           # MLP ratio = 4
+# dropout: 0.1
+# dit_drop_path: 0.1
+# =============================================================================

@@ -14,6 +14,7 @@ from models.trick.mamba_block import *
 # from models.trick.mamba_cross import *
 # from models.trick.mamba_block_AdaLN import *
 from models.trick.rwkv_block import BidirectionalRWKVBlock
+from models.trick.dit_block import DiTBlock, DiTBlockWithCrossAttention, ConditionEmbedder, FinalLayer
 
 
 @Model.register()
@@ -51,6 +52,12 @@ class CMDM(nn.Module):
             SceneMapModule = SceneMapEncoder
             self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
         elif self.arch == 'trans_rwkv':
+            SceneMapModule = SceneMapEncoder
+            self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
+        elif self.arch == 'dit':
+            SceneMapModule = SceneMapEncoder
+            self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
+        elif self.arch == 'dit_cross':
             SceneMapModule = SceneMapEncoder
             self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
         else:
@@ -233,6 +240,92 @@ class CMDM(nn.Module):
                             batch_first=True,
                         )
                     )
+
+        # -----------------------------------------------------------
+        # [DiT Branch] DiT-style architecture with AdaLN
+        # -----------------------------------------------------------
+        elif self.arch == 'dit':
+            total_layers = sum(cfg.num_layers)
+            mlp_ratio = cfg.dim_feedforward / float(self.latent_dim)
+            drop_path_rate = getattr(cfg, 'dit_drop_path', 0.1)
+
+            # Condition embedder: fuses time + text + contact into single vector
+            self.cond_embedder = ConditionEmbedder(
+                input_dim=self.latent_dim,
+                output_dim=self.latent_dim,
+                use_cross_attn_pooling=getattr(cfg, 'dit_use_cross_attn_pooling', True)
+            )
+
+            # DiT blocks with AdaLN
+            self.dit_blocks = nn.ModuleList([
+                DiTBlock(
+                    hidden_size=self.latent_dim,
+                    num_heads=cfg.num_heads,
+                    cond_dim=self.latent_dim,
+                    mlp_ratio=mlp_ratio,
+                    drop=cfg.dropout,
+                    drop_path=drop_path_rate * (i / (total_layers - 1)) if total_layers > 1 else 0.0
+                )
+                for i in range(total_layers)
+            ])
+
+            # Final layer with AdaLN
+            self.final_layer = FinalLayer(
+                hidden_size=self.latent_dim,
+                output_size=self.motion_dim,
+                cond_dim=self.latent_dim
+            )
+
+            print(f"\n{'=' * 20} CMDM DiT Architecture Info {'=' * 20}")
+            print(f"Arch: {self.arch}")
+            print(f"Total DiT Blocks: {total_layers}")
+            print(f"Latent Dim: {self.latent_dim}")
+            print(f"MLP Ratio: {mlp_ratio}")
+            print(f"Drop Path Rate: {drop_path_rate}")
+            print(f"{'=' * 64}\n")
+
+        # -----------------------------------------------------------
+        # [DiT + Cross-Attention Branch]
+        # -----------------------------------------------------------
+        elif self.arch == 'dit_cross':
+            total_layers = sum(cfg.num_layers)
+            mlp_ratio = cfg.dim_feedforward / float(self.latent_dim)
+            drop_path_rate = getattr(cfg, 'dit_drop_path', 0.1)
+
+            # Condition embedder for AdaLN (time + text only, contact via cross-attn)
+            self.cond_embedder = ConditionEmbedder(
+                input_dim=self.latent_dim,
+                output_dim=self.latent_dim,
+                use_cross_attn_pooling=False  # We'll use full cross-attention instead
+            )
+
+            # DiT blocks with both AdaLN and cross-attention to contact
+            self.dit_blocks = nn.ModuleList([
+                DiTBlockWithCrossAttention(
+                    hidden_size=self.latent_dim,
+                    num_heads=cfg.num_heads,
+                    cond_dim=self.latent_dim,
+                    context_dim=self.latent_dim,  # contact features
+                    mlp_ratio=mlp_ratio,
+                    drop=cfg.dropout,
+                    drop_path=drop_path_rate * (i / (total_layers - 1)) if total_layers > 1 else 0.0
+                )
+                for i in range(total_layers)
+            ])
+
+            # Final layer
+            self.final_layer = FinalLayer(
+                hidden_size=self.latent_dim,
+                output_size=self.motion_dim,
+                cond_dim=self.latent_dim
+            )
+
+            print(f"\n{'=' * 20} CMDM DiT+Cross Architecture Info {'=' * 20}")
+            print(f"Arch: {self.arch}")
+            print(f"Total DiT Blocks: {total_layers}")
+            print(f"With Cross-Attention to Contact Features")
+            print(f"{'=' * 64}\n")
+
         else:
             raise NotImplementedError
 
@@ -355,6 +448,65 @@ class CMDM(nn.Module):
 
             non_motion_token = time_mask.shape[1] + text_mask.shape[1]
             x = x[:, non_motion_token:, :]
+
+        # -----------------------------------------------------------
+        # [DiT Branch] Forward with AdaLN conditioning
+        # -----------------------------------------------------------
+        elif self.arch == 'dit':
+            # Prepare motion with positional encoding
+            x = self.positional_encoder(x.permute(1, 0, 2)).permute(1, 0, 2)
+
+            # Prepare motion mask
+            x_mask = kwargs.get('x_mask', None) if self.mask_motion else None
+
+            # Fuse conditions into single vector: time + text + contact -> cond
+            # time_emb: [B, 1, D], text_emb: [B, 1, D], cont_emb: [B, N, D]
+            cond = self.cond_embedder(
+                time_emb.squeeze(1),  # [B, D]
+                text_emb,              # [B, 1, D]
+                cont_emb,              # [B, N, D]
+                contact_mask=cont_mask if self.mask_motion else None
+            )  # [B, D]
+
+            # Apply DiT blocks with AdaLN
+            for block in self.dit_blocks:
+                x = block(x, cond, padding_mask=x_mask)
+
+            # Final layer (also uses AdaLN)
+            x = self.final_layer(x, cond)
+            return x  # Skip motion_layer, final_layer already projects to motion_dim
+
+        # -----------------------------------------------------------
+        # [DiT + Cross-Attention Branch]
+        # -----------------------------------------------------------
+        elif self.arch == 'dit_cross':
+            # Prepare motion with positional encoding
+            x = self.positional_encoder(x.permute(1, 0, 2)).permute(1, 0, 2)
+
+            # Prepare masks
+            x_mask = kwargs.get('x_mask', None) if self.mask_motion else None
+
+            # Fuse time + text into condition vector (contact goes to cross-attention)
+            cond = self.cond_embedder(
+                time_emb.squeeze(1),  # [B, D]
+                text_emb,              # [B, 1, D]
+                cont_emb,              # [B, N, D] - will be mean-pooled for AdaLN
+                contact_mask=cont_mask if self.mask_motion else None
+            )  # [B, D]
+
+            # Apply DiT blocks with AdaLN + cross-attention to contact
+            for block in self.dit_blocks:
+                x = block(
+                    x, cond,
+                    context=cont_emb,  # Full contact features for cross-attention
+                    padding_mask=x_mask,
+                    context_mask=cont_mask if self.mask_motion else None
+                )
+
+            # Final layer
+            x = self.final_layer(x, cond)
+            return x  # Skip motion_layer
+
         else:
             raise NotImplementedError
 

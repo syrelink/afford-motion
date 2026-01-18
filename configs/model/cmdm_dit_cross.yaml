@@ -1,0 +1,53 @@
+name: CMDM
+
+## modeling space
+input_feats: -1
+data_repr: 'pos'
+
+## time embedding
+time_emb_dim: 512
+
+## conditions
+## 1. contact
+contact_model:
+  contact_type: 'contact_cont_joints'
+  contact_joints: [0, 10, 11, 12, 20, 21]
+  planes: [32, 64, 128, 256]
+  num_points: ${task.dataset.num_points}
+  blocks: [2, 2, 2, 2]
+
+## 2. text
+text_model:
+  version: 'ViT-B/32'
+  max_length: 32
+
+# =============================================================================
+# DiT + Cross-Attention Architecture
+# =============================================================================
+# This variant combines:
+#   1. AdaLN conditioning (time + text + pooled contact)
+#   2. Cross-attention to full contact features at every layer
+#
+# This provides DUAL conditioning pathways:
+#   - AdaLN: Global condition modulation
+#   - Cross-Attn: Fine-grained spatial attention to contact map
+#
+# Best for tasks where spatial relationship to contact points matters.
+# =============================================================================
+
+arch: 'dit_cross'
+
+# DiT specific parameters
+dit_drop_path: 0.1
+
+# Model dimensions
+latent_dim: 512
+mask_motion: true
+
+# Number of DiT blocks
+num_layers: [1,1,1,1,1,1]  # Total: 6 blocks (slightly less due to cross-attn overhead)
+
+# Attention settings
+num_heads: 8
+dropout: 0.1
+dim_feedforward: 2048

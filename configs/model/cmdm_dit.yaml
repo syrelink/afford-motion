@@ -1,0 +1,53 @@
+name: CMDM
+
+## modeling space
+input_feats: -1
+data_repr: 'pos'
+
+## time embedding
+time_emb_dim: 512
+
+## conditions
+## 1. contact
+contact_model:
+  contact_type: 'contact_cont_joints'
+  contact_joints: [0, 10, 11, 12, 20, 21]
+  planes: [32, 64, 128, 256]
+  num_points: ${task.dataset.num_points}
+  blocks: [2, 2, 2, 2]
+
+## 2. text
+text_model:
+  version: 'ViT-B/32'
+  max_length: 32
+
+# =============================================================================
+# DiT (Diffusion Transformer) Architecture
+# =============================================================================
+# Key difference from trans_enc:
+#   - trans_enc: Concatenates [time, text, contact, motion] as tokens
+#   - DiT: Uses AdaLN to inject conditions at EVERY layer
+#
+# Benefits:
+#   1. Stronger conditioning - conditions modulate every layer's normalization
+#   2. More efficient - no extra sequence length for condition tokens
+#   3. Better gradient flow - direct modulation path
+# =============================================================================
+
+arch: 'dit'
+
+# DiT specific parameters
+dit_drop_path: 0.1                 # Stochastic depth rate (linear from 0 to this)
+dit_use_cross_attn_pooling: true   # Use cross-attention to aggregate contact features
+
+# Model dimensions
+latent_dim: 512
+mask_motion: true
+
+# Number of DiT blocks (sum of num_layers)
+num_layers: [1,1,1,1,1,1,1,1]  # Total: 8 DiT blocks
+
+# Attention settings
+num_heads: 8
+dropout: 0.1
+dim_feedforward: 2048  # MLP ratio = 4.0 (2048/512)
