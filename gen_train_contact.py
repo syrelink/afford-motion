@@ -42,7 +42,7 @@ def train_gen_map(cfg: DictConfig) -> None:
     # Setup save directory
     save_dir = cfg.get('save_dir', 'data')  # 默认保存到 data 目录
     contact_save_dir = os.path.join(save_dir, 'H3D/pred_contact')
-    mkdir_if_not_exists(contact_save_dir)
+    os.makedirs(contact_save_dir, exist_ok=True)  # 递归创建目录
 
     logger.info(f'[Generate] Save directory: {contact_save_dir}')
     logger.info('[Configuration]\n' + OmegaConf.to_yaml(cfg) + '\n')
