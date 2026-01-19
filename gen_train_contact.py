@@ -38,13 +38,23 @@ def train_gen_map(cfg: DictConfig) -> None:
 
     Args:
         cfg: configuration dict
+
+    Multi-GPU支持:
+        num_splits: 总共分成几份 (默认1，即不分割)
+        split_id: 当前处理第几份 (从0开始)
+        例如双GPU: GPU0运行 num_splits=2 split_id=0, GPU1运行 num_splits=2 split_id=1
     """
     # Setup save directory
     save_dir = cfg.get('save_dir', 'data')  # 默认保存到 data 目录
     contact_save_dir = os.path.join(save_dir, 'H3D/pred_contact')
     os.makedirs(contact_save_dir, exist_ok=True)  # 递归创建目录
 
+    # Multi-GPU split parameters
+    num_splits = cfg.get('num_splits', 1)
+    split_id = cfg.get('split_id', 0)
+
     logger.info(f'[Generate] Save directory: {contact_save_dir}')
+    logger.info(f'[Generate] Multi-GPU: split {split_id + 1}/{num_splits}')
     logger.info('[Configuration]\n' + OmegaConf.to_yaml(cfg) + '\n')
 
     if cfg.gpu is not None:
@@ -81,9 +91,16 @@ def train_gen_map(cfg: DictConfig) -> None:
     B = train_dataloader.batch_size
     generated_count = 0
     skipped_count = 0
+    total_batches = len(train_dataloader)
+    my_batches = (total_batches + num_splits - 1) // num_splits  # 当前GPU需要处理的batch数
 
     for i, data in enumerate(train_dataloader):
-        logger.info(f"[{i+1}/{len(train_dataloader)}] batch index: {i}, case index: {data['info_index']}")
+        # Multi-GPU: 只处理属于当前split的batch
+        if i % num_splits != split_id:
+            continue
+
+        my_batch_idx = i // num_splits + 1
+        logger.info(f"[{my_batch_idx}/{my_batches}] (global batch {i+1}/{total_batches}) case index: {data['info_index']}")
 
         x = data['x']
         x_kwargs = {}
