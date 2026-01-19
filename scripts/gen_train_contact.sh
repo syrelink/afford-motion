@@ -7,7 +7,7 @@
 # Example:
 #   bash scripts/gen_train_contact.sh outputs/2024-01-15_cdm_perceiver
 #   bash scripts/gen_train_contact.sh outputs/cdm_exp data Perceiver
-#   bash scripts/gen_train_contact.sh 2026-01-03_03-00-57_CDM-Perceiver-H3D-PointMamba map_pointmamba PointMamba
+#   bash scripts/gen_train_contact.sh outputs/2026-01-03_03-00-57_CDM-Perceiver-H3D-PointMamba map_pointmamba PointMamba
 
 EXP_DIR=$1
 SAVE_DIR=$2
