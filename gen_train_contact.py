@@ -100,6 +100,25 @@ def train_gen_map(cfg: DictConfig) -> None:
             continue
 
         my_batch_idx = i // num_splits + 1
+
+        # 先检查这个batch的文件是否都已存在，如果是则跳过整个batch
+        all_exist = True
+        batch_files = []
+        for bsi in range(len(data['info_index'])):
+            name = data['info_index'][bsi]
+            caption_index = data['info_caption_index'][bsi]
+            if isinstance(caption_index, torch.Tensor):
+                caption_index = caption_index.item()
+            save_path = os.path.join(contact_save_dir, f'{name}-{caption_index}.npy')
+            batch_files.append((bsi, name, caption_index, save_path))
+            if not os.path.exists(save_path):
+                all_exist = False
+
+        if all_exist:
+            skipped_count += len(batch_files)
+            logger.info(f"[{my_batch_idx}/{my_batches}] (global batch {i+1}/{total_batches}) 全部已存在，跳过")
+            continue
+
         logger.info(f"[{my_batch_idx}/{my_batches}] (global batch {i+1}/{total_batches}) case index: {data['info_index']}")
 
         x = data['x']
@@ -126,15 +145,8 @@ def train_gen_map(cfg: DictConfig) -> None:
         )
 
         # 边生成边保存 (save incrementally)
-        for bsi in range(min(B, sample.shape[0])):
-            name = data['info_index'][bsi]
-            caption_index = data['info_caption_index'][bsi]
-            if isinstance(caption_index, torch.Tensor):
-                caption_index = caption_index.item()
-
-            save_path = os.path.join(contact_save_dir, f'{name}-{caption_index}.npy')
-
-            # Skip if already exists
+        for bsi, name, caption_index, save_path in batch_files:
+            # Skip if already exists (部分batch可能有些文件已存在)
             if os.path.exists(save_path):
                 skipped_count += 1
                 continue
