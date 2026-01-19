@@ -43,7 +43,7 @@ python gen_train_contact.py hydra/job_logging=none hydra/hydra_logging=none \
     output_dir=outputs \
     diffusion.steps=500 \
     task=text_to_motion_contact_gen \
-    task.dataset.phase=train \
+    +task.dataset.phase=train \
     model=cdm \
     model.arch=${ARCH} \
     model.scene_model.use_scene_model=False \
