@@ -7,7 +7,7 @@
 # Example:
 #   bash scripts/gen_train_contact.sh outputs/2024-01-15_cdm_perceiver
 #   bash scripts/gen_train_contact.sh outputs/cdm_exp data Perceiver
-#   bash scripts/gen_train_contact.sh outputs/cdm_exp data PointMamba
+#   bash scripts/gen_train_contact.sh 2026-01-03_03-00-57_CDM-Perceiver-H3D-PointMamba map_pointmamba PointMamba
 
 EXP_DIR=$1
 SAVE_DIR=$2
@@ -39,7 +39,7 @@ echo "=============================================="
 python gen_train_contact.py hydra/job_logging=none hydra/hydra_logging=none \
     exp_dir=${EXP_DIR} \
     seed=${SEED} \
-    save_dir=${SAVE_DIR} \
+    +save_dir=${SAVE_DIR} \
     output_dir=outputs \
     diffusion.steps=500 \
     task=text_to_motion_contact_gen \
