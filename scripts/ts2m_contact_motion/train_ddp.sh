@@ -20,7 +20,8 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --nnodes=1 --nproc_per_node=2 --rdzv_backend=c
             task.dataset.sigma=0.8 \
             task.dataset.sets=["HUMANISE"] \
             task.dataset.train_transforms=['RandomRotation','ApplyTransformCMDM','RandomMaskLang','NumpyToTensor'] \
-            task.dataset.mix_train_ratio=0.0 \
+            task.dataset.mix_train_ratio=0.5 \
+            +task.dataset.pred_contact_dir=map_pointmamba \
             model=cmdm \
-            model.arch='trans_mamba' \
+            model.arch='trans_enc' \
             model.time_emb_dim=128
