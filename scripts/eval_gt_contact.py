@@ -25,19 +25,42 @@ def evaluate_gt_contact(data_dir, dataset, num_samples=None, thresholds=[0.1, 0.
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 
+    print(f"Dataset: {dataset}")
+    print(f"Contact dir: {contact_dir}")
+    print(f"Found files: {len(contact_files)}")
+
+    if len(contact_files) == 0:
+        print(f"ERROR: No .npz files found in {contact_dir}")
+        print(f"Please check the path exists and contains .npz files")
+        # 尝试列出目录内容
+        if os.path.exists(contact_dir):
+            files = os.listdir(contact_dir)[:10]
+            print(f"Directory contents (first 10): {files}")
+        else:
+            print(f"Directory does not exist: {contact_dir}")
+        return None
+
     if num_samples and num_samples < len(contact_files):
         # 随机采样
         np.random.seed(2023)
         indices = np.random.choice(len(contact_files), num_samples, replace=False)
         contact_files = [contact_files[i] for i in indices]
 
-    print(f"Dataset: {dataset}")
-    print(f"Contact dir: {contact_dir}")
-    print(f"Total files: {len(contact_files)}")
+    print(f"Evaluating {len(contact_files)} files")
     print(f"Thresholds: {thresholds}")
     print("=" * 60)
 
+    # 先检查第一个文件的结构
+    first_file = contact_files[0]
+    print(f"\nChecking first file structure: {first_file}")
+    data = np.load(first_file)
+    print(f"Keys in npz: {list(data.keys())}")
+    for key in data.keys():
+        print(f"  {key}: shape={data[key].shape}, dtype={data[key].dtype}")
+    print()
+
     metrics = defaultdict(list)
+    error_count = 0
 
     for f in tqdm(contact_files, desc="Evaluating GT"):
         try:
@@ -49,10 +72,14 @@ def evaluate_gt_contact(data_dir, dataset, num_samples=None, thresholds=[0.1, 0.
                 obj_mask = data['obj_mask'].astype(bool)
                 obj_dist = dist[obj_mask, :]
             else:
-                # 假设距离最小的点是目标物体
-                obj_dist = dist
+                # 没有 obj_mask，用距离最小的前10%的点作为目标区域
+                min_dists = dist.min(axis=1)
+                threshold_dist = np.percentile(min_dists, 10)
+                obj_mask = min_dists <= threshold_dist
+                obj_dist = dist[obj_mask, :]
 
             if obj_dist.size == 0:
+                error_count += 1
                 continue
 
             # 计算指标 (与 evaluate.py 相同的逻辑)
@@ -71,7 +98,14 @@ def evaluate_gt_contact(data_dir, dataset, num_samples=None, thresholds=[0.1, 0.
 
         except Exception as e:
             print(f"Error loading {f}: {e}")
+            error_count += 1
             continue
+
+    print(f"\nProcessed: {len(contact_files) - error_count}, Errors: {error_count}")
+
+    if len(metrics['dist_to_target_global_min']) == 0:
+        print("ERROR: No valid samples processed!")
+        return None
 
     # 打印结果
     print("\n" + "=" * 60)
