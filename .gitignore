@@ -4,4 +4,5 @@ data
 outputs
 body_models
 a.py
-*.hide
+*.hidemap_pointmamba/
+map_pointmamba/
