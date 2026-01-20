@@ -17,7 +17,7 @@ def evaluate_gt_contact(data_dir, dataset, num_samples=None, thresholds=[0.1, 0.
     """评估 GT contact map 的指标"""
 
     if dataset == 'HUMANISE':
-        contact_dir = os.path.join(data_dir, 'HUMANISE/contacts')
+        contact_dir = os.path.join(data_dir, 'HUMANISE/contact_motion/contacts')
         contact_files = sorted(glob(os.path.join(contact_dir, '*.npz')))
     elif dataset == 'H3D':
         contact_dir = os.path.join(data_dir, 'H3D/contacts')
