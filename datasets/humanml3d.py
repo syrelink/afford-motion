@@ -587,6 +587,18 @@ class ContactMotionHumanML3DDataset(Dataset):
         self.min_horizon = cfg.min_horizon
         self.mix_train_ratio = cfg.mix_train_ratio
 
+        # 自定义 pred_contact 路径，默认使用 data_dir
+        self.pred_contact_dir = cfg.get('pred_contact_dir', self.data_dir)
+
+        # 打印关键配置参数
+        if self.phase == 'train':
+            logger.info("=" * 60)
+            logger.info("[Stage2 Dataset Config]")
+            logger.info(f"  mix_train_ratio: {self.mix_train_ratio}")
+            logger.info(f"  pred_contact_dir: {self.pred_contact_dir}")
+            logger.info(f"  data_dir: {self.data_dir}")
+            logger.info("=" * 60)
+
         if self.phase == 'test':
             self.contact_folder = kwargs['contact_folder'] # use predict contact map for evaluation
             assert self.contact_folder != '', "Please specify the pre-generated contact folder for testing"
@@ -680,7 +692,15 @@ class ContactMotionHumanML3DDataset(Dataset):
             if self.mix_train_ratio > 0:
                 self.pred_contact_dict = defaultdict(list)
 
-                contact_files = glob.glob(os.path.join(self.data_dir, f"H3D/pred_contact/*-*.npy"))
+                contact_path = os.path.join(self.pred_contact_dir, f"H3D/pred_contact/*-*.npy")
+                contact_files = glob.glob(contact_path)
+                logger.info("=" * 60)
+                logger.info("[Loading Pred Contact Files]")
+                logger.info(f"  Path: {self.pred_contact_dir}/H3D/pred_contact/")
+                logger.info(f"  Found: {len(contact_files)} files")
+                if len(contact_files) == 0:
+                    logger.warning(f"  WARNING: No pred_contact files found! Check path: {contact_path}")
+                logger.info("=" * 60)
                 for f in contact_files:
                     name = os.path.basename(f).split('-')[0]
                     self.pred_contact_dict[name].append(f)
