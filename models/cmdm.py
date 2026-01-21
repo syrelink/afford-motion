@@ -242,7 +242,7 @@ class CMDM(nn.Module):
                     )
 
         # -----------------------------------------------------------
-        # [DiT Branch] DiT-style architecture with AdaLN
+        # [DiT· Branch] DiT-style architecture with AdaLN
         # -----------------------------------------------------------
         elif self.arch == 'dit':
             total_layers = sum(cfg.num_layers)
