@@ -9,7 +9,7 @@ from models.scene_models.pointtransformer import TransitionDown, TransitionUp, P
 from models.functions import load_and_freeze_clip_model, encode_text_clip, \
     load_and_freeze_bert_model, encode_text_bert, get_lang_feat_dim_type
 from models.functions import load_scene_model
-from models.trick.point_scene_mamba import ContactPointMamba
+from models.trick.point_scene_mamba import ContactPointMamba, ContactHybridMamba
 
 class PointSceneMLP(nn.Module):
 
@@ -494,6 +494,21 @@ class CDM(nn.Module):
                     'last_dim': 256
                 })
             CONTACT_MODEL = ContactPointMamba
+        # [新增] HybridMamba 分支 (Mamba局部精度 + Perceiver全局一致性)
+        elif self.arch == 'HybridMamba':
+            if hasattr(cfg, 'arch_hybridmamba'):
+                self.arch_cfg = cfg.arch_hybridmamba
+            else:
+                self.arch_cfg = DictConfig({
+                    'trans_dim': 256,
+                    'depth': 4,
+                    'last_dim': 256,
+                    'num_latents': 128,
+                    'num_heads': 8,
+                    'use_multi_scan': True,
+                    'use_perceiver': True
+                })
+            CONTACT_MODEL = ContactHybridMamba
     # =========================================================
         else:
             raise NotImplementedError

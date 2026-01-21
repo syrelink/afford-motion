@@ -108,7 +108,7 @@ class CMDM(nn.Module):
         elif self.arch == 'trans_mamba':
             total_layers = sum(cfg.num_layers)
             # mamba_layers = getattr(cfg, 'mamba_layers', 1)
-            mamba_layers = 3
+            mamba_layers = 1
 
             if mamba_layers > total_layers:
                 raise ValueError("cfg.mamba_layers 不能大于总层数")
