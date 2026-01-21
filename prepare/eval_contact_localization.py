@@ -9,9 +9,17 @@
 用法:
     python prepare/eval_contact_localization.py \
         --data_dir data \
-        --pred_dir outputs/xxx/test-xxx/HUMANISE/pred_contact \
+        --pred_dir map_pointmamba/H3D/pred_contact \
         --dataset HUMANISE \
         --phase test
+
+
+    python prepare/eval_contact_localization.py \
+        --data_dir data \
+        --pred_dir outputs/CDM-Perceiver-HUMANISE-step200k/eval/test-1127-204318/HUMANISE/pred_contact\
+        --dataset HUMANISE \
+        --phase test
+
 """
 import os
 import sys
