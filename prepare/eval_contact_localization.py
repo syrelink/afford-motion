@@ -9,20 +9,22 @@
 用法:
     python prepare/eval_contact_localization.py \
         --data_dir data \
-        --pred_dir map_pointmamba/H3D/pred_contact \
+        --pred_dir outputs/2025-12-25_10-44-17_CDM-Perceiver-HUMANISE-step200k-PointMamba/eval/test-1230-191237/HUMANISE/pred_contact \
         --dataset HUMANISE \
-        --phase test
+        --phase test \
+        --joint_subset first
 
-
+    # 或者指定具体的关节索引（如果知道的话）
     python prepare/eval_contact_localization.py \
         --data_dir data \
-        --pred_dir outputs/CDM-Perceiver-HUMANISE-step200k/eval/test-1127-204318/HUMANISE/pred_contact\
+        --pred_dir outputs/.../pred_contact \
         --dataset HUMANISE \
-        --phase test
-
+        --phase test \
+        --joint_subset 0,1,2,3,16,17
 """
 import os
 import sys
+
 sys.path.append(os.path.abspath('.'))
 
 import numpy as np
@@ -221,11 +223,12 @@ def soft_localization_score(pred_dist, gt_dist, xyz, sigma=0.1):
 
 
 def evaluate_contact_localization(
-    data_dir: str,
-    pred_dir: str,
-    dataset: str = 'HUMANISE',
-    phase: str = 'test',
-    use_obj_mask: bool = True
+        data_dir: str,
+        pred_dir: str,
+        dataset: str = 'HUMANISE',
+        phase: str = 'test',
+        use_obj_mask: bool = True,
+        joint_subset: str = 'first'
 ):
     """
     主评估函数
@@ -236,6 +239,9 @@ def evaluate_contact_localization(
         dataset: 数据集名称
         phase: train/test
         use_obj_mask: 是否只评估目标物体区域
+        joint_subset: 关节选择策略
+            - 'first': 取GT的前N个关节（N=预测的关节数）
+            - '0,1,2,3,16,17': 指定具体的关节索引
     """
     # 加载 split ids
     txt_path = os.path.join(data_dir, f'{dataset}/{phase}.txt')
@@ -250,7 +256,18 @@ def evaluate_contact_localization(
     print(f"Prediction dir: {pred_dir}")
     print(f"Total samples: {len(split_ids)}")
     print(f"Use obj_mask: {use_obj_mask}")
+    print(f"Joint subset strategy: {joint_subset}")
     print("=" * 60)
+
+    # 解析关节索引
+    joint_indices = None
+    if joint_subset != 'first':
+        try:
+            joint_indices = [int(x.strip()) for x in joint_subset.split(',')]
+            print(f"Using specific joint indices: {joint_indices}")
+        except:
+            print(f"Invalid joint_subset format: {joint_subset}, using 'first' strategy")
+            joint_subset = 'first'
 
     # Metrics
     metrics = defaultdict(list)
@@ -258,6 +275,7 @@ def evaluate_contact_localization(
     processed = 0
     skipped = 0
     errors = 0
+    shape_mismatch_printed = False
 
     for idx in tqdm(split_ids, desc="Evaluating"):
         try:
@@ -281,7 +299,27 @@ def evaluate_contact_localization(
             if pred_dist.ndim == 3:
                 pred_dist = pred_dist[0]  # [1, N, J] -> [N, J]
 
-            # 检查形状匹配
+            # === 处理关节数量不匹配 ===
+            if pred_dist.shape[1] != gt_dist.shape[1]:
+                if not shape_mismatch_printed:
+                    print(
+                        f"\n[INFO] Detected shape mismatch: pred has {pred_dist.shape[1]} joints, GT has {gt_dist.shape[1]} joints")
+                    print(f"[INFO] Applying joint subset strategy: {joint_subset}")
+                    shape_mismatch_printed = True
+
+                if joint_subset == 'first':
+                    # 只取GT的前N个关节（N = 预测的关节数）
+                    gt_dist = gt_dist[:, :pred_dist.shape[1]]
+                elif joint_indices is not None:
+                    # 使用指定的关节索引
+                    if max(joint_indices) >= gt_dist.shape[1]:
+                        print(
+                            f"Error: joint index {max(joint_indices)} out of range (GT has {gt_dist.shape[1]} joints)")
+                        skipped += 1
+                        continue
+                    gt_dist = gt_dist[:, joint_indices]
+
+            # 最终检查形状匹配
             if pred_dist.shape != gt_dist.shape:
                 print(f"Shape mismatch at {idx}: pred {pred_dist.shape} vs gt {gt_dist.shape}")
                 skipped += 1
@@ -347,12 +385,22 @@ def evaluate_contact_localization(
 
         except Exception as e:
             errors += 1
-            print(f"Error at {idx}: {e}")
+            if errors <= 5:  # 只打印前5个错误
+                print(f"Error at {idx}: {e}")
 
     # === 打印结果 ===
     print("\n" + "=" * 60)
     print(f"Processed: {processed}, Skipped: {skipped}, Errors: {errors}")
     print("=" * 60)
+
+    if processed == 0:
+        print("ERROR: No samples were successfully processed!")
+        print("Please check:")
+        print("  1. Are prediction files in the correct directory?")
+        print("  2. Do file names match the format xxxxx.npy?")
+        print("  3. Is the --joint_subset parameter correct?")
+        return None
+
     print("Contact Localization Evaluation Results")
     print("=" * 60)
 
@@ -406,6 +454,9 @@ if __name__ == '__main__':
                         help='Data split phase')
     parser.add_argument('--no_obj_mask', action='store_true',
                         help='Do not use obj_mask for HUMANISE')
+    parser.add_argument('--joint_subset', type=str, default='first',
+                        help='Joint selection strategy when pred and GT have different number of joints. '
+                             'Options: "first" (use first N joints from GT), or comma-separated indices like "0,1,2,3,16,17"')
     args = parser.parse_args()
 
     evaluate_contact_localization(
@@ -413,5 +464,6 @@ if __name__ == '__main__':
         pred_dir=args.pred_dir,
         dataset=args.dataset,
         phase=args.phase,
-        use_obj_mask=not args.no_obj_mask
+        use_obj_mask=not args.no_obj_mask,
+        joint_subset=args.joint_subset
     )
