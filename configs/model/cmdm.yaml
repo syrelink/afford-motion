@@ -31,22 +31,40 @@ text_model:
 #dropout: 0.1
 #dim_feedforward: 1024
 
-# 模型架构选择
-arch: "trans_mamba"
-# Mamba 相关参数
-mamba_layers: 1       # 如果 num_layers 总和也是 8，则全用 Mamba；如果是 4，则前 4 层 Trans，后 4 层 Mamba
-mamba_d_state: 16     # SSM 状态维度 (默认 16)
-mamba_d_conv: 4       # 局部卷积核大小 (默认 4)
-mamba_expand: 2       # 内部维度扩展倍数 (默认 2)
-mamba_drop_path: 0.1  # Stochastic Depth (建议设为 0.1 提高泛化)
+# 模型架构选择 - DiT 稳定配置
+arch: "dit"
 
-# 其他基础参数 (保持原 CMDM 设置)
+# DiT 核心参数
 latent_dim: 512
 mask_motion: true
-num_layers: [1,1,1,1,1]
+
+# 层数配置 (3个阶段，每阶段8层，共24层)
+num_layers: [8, 8, 8]
+
+# 注意力头数
 num_heads: 8
-dropout: 0.1
-dim_feedforward: 1024
+
+# MLP 扩展倍数
+dim_feedforward: 2048
+
+# Dropout (增加正则化)
+dropout: 0.15
+
+# DiT 专用参数
+dit_drop_path: 0.1
+dit_use_cross_attn_pooling: true
+
+# 条件嵌入配置
+condition_embedder:
+  use_cross_attn_pooling: true
+  num_latents: 128
+  fusion_method: 'cross_attn'
+
+# 训练稳定性参数
+grad_clip: 1.0
+weight_decay: 1e-4
+warmup_steps: 2000
+lr_scheduler: 'cosine'
 
 # =============================================================================
 # DiT (Diffusion Transformer) 架构配置

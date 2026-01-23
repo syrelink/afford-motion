@@ -1,0 +1,70 @@
+name: CMDM-Stable
+
+## modeling space
+input_feats: -1
+data_repr: 'pos'
+
+## time embedding
+time_emb_dim: 512
+
+## conditions
+contact_model:
+  contact_type: 'contact_cont_joints'
+  contact_joints: [0, 10, 11, 12, 20, 21]
+  planes: [32, 64, 128, 256]
+  num_points: ${task.dataset.num_points}
+  blocks: [2, 2, 2, 2]
+
+text_model:
+  version: 'ViT-B/32'
+  max_length: 32
+
+### model architecture (保持5层，不增加)
+arch: "dit"
+latent_dim: 512
+mask_motion: true
+
+# 保持5层（不增加）
+num_layers: [1, 1, 1, 1, 1]
+
+# 注意力头
+num_heads: 8
+
+# MLP扩展
+dim_feedforward: 1024
+
+# 正则化（适度增强）
+dropout: 0.15
+dit_drop_path: 0.05
+
+# DiT专用参数
+dit_use_cross_attn_pooling: true
+
+# 条件嵌入
+condition_embedder:
+  use_cross_attn_pooling: true
+  num_latents: 64
+  fusion_method: 'cross_attn'
+
+### 训练稳定性参数
+grad_clip: 1.0
+weight_decay: 1e-4
+warmup_steps: 2000
+lr_scheduler: 'cosine'
+
+### 评估策略（减少开销）
+eval_every_epochs: 20
+eval_num_samples: 500
+
+### 早停策略
+early_stopping:
+  enabled: true
+  patience: 5
+  min_delta: 0.01
+
+### 目标指标
+target_metrics:
+  fid: 0.25
+  top1: 0.43
+  top2: 0.64
+  top3: 0.73
