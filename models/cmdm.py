@@ -171,6 +171,51 @@ class CMDM(nn.Module):
                 self.encoder_layers.append(layer)
 
         # -----------------------------------------------------------
+        # [BiMamba Branch] Bi-directional Mamba architecture
+        # -----------------------------------------------------------
+        elif self.arch == 'bimamba':
+            total_layers = sum(cfg.num_layers)
+            mamba_layers = getattr(cfg, 'mamba_layers', 2)
+
+            if mamba_layers > total_layers:
+                raise ValueError("cfg.mamba_layers 不能大于总层数")
+
+            mlp_ratio = cfg.dim_feedforward / float(self.latent_dim)
+            self.encoder_layers = nn.ModuleList()
+
+            for idx in range(total_layers):
+                if idx < total_layers - mamba_layers:
+                    layer = nn.TransformerEncoderLayer(
+                        d_model=self.latent_dim,
+                        nhead=cfg.num_heads,
+                        dim_feedforward=cfg.dim_feedforward,
+                        dropout=cfg.dropout,
+                        activation='gelu',
+                        batch_first=True,
+                    )
+                else:
+                    layer = BidirectionalMambaBlock(
+                        d_model=self.latent_dim,
+                        d_state=getattr(cfg, 'mamba_d_state', 16),
+                        d_conv=getattr(cfg, 'mamba_d_conv', 4),
+                        expand=getattr(cfg, 'mamba_expand', 2),
+                        mlp_ratio=mlp_ratio,
+                        drop=cfg.dropout,
+                        drop_path=getattr(cfg, 'mamba_drop_path', 0.05),
+                    )
+                self.encoder_layers.append(layer)
+
+            print(f"\n{'=' * 20} CMDM Architecture Info {'=' * 20}")
+            print(f"Arch: {self.arch}")
+            print(f"Total Layers: {len(self.encoder_layers)}")
+            for i, layer in enumerate(self.encoder_layers):
+                if isinstance(layer, nn.TransformerEncoderLayer):
+                    print(f"  Layer {i+1}: TransformerEncoderLayer")
+                else:
+                    print(f"  Layer {i+1}: BidirectionalMambaBlock")
+            print(f"{'=' * 64}\n")
+
+        # -----------------------------------------------------------
         # [RWKV Branch] 正确初始化
         # -----------------------------------------------------------
         elif self.arch == 'trans_rwkv':
@@ -240,6 +285,8 @@ class CMDM(nn.Module):
                             batch_first=True,
                         )
                     )
+
+
 
         # -----------------------------------------------------------
         # [DiT· Branch] DiT-style architecture with AdaLN

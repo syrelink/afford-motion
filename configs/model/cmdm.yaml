@@ -41,73 +41,69 @@ text_model:
 #dropout: 0.1
 #dim_feedforward: 1024
 
-# 模型架构选择 - DiT 稳定配置
-arch: "dit"
-
-# DiT 核心参数
+# bimamba 配置（新增）
+arch: 'bimamba'
 latent_dim: 512
 mask_motion: true
-
-# 层数配置（保持5层，不增加）
-num_layers: [1, 1, 1, 1, 1]
-
-# 注意力头数
+num_layers: [3, 2]  # 3层Transformer + 2层BiMamba
 num_heads: 8
-
-# MLP 扩展倍数
 dim_feedforward: 1024
-
-# Dropout（增强正则化）
 dropout: 0.15
+mamba_layers: 2
+mamba_d_state: 16
+mamba_d_conv: 4
+mamba_expand: 2
+mamba_drop_path: 0.05
 
-# DiT 专用参数
-dit_drop_path: 0.05
-dit_use_cross_attn_pooling: true
 
-# 条件嵌入配置
-condition_embedder:
-  use_cross_attn_pooling: true
-  num_latents: 64
-  fusion_method: 'cross_attn'
 
-# 训练稳定性参数
-grad_clip: 1.0
-weight_decay: 1e-4
-warmup_steps: 2000
-lr_scheduler: 'cosine'
+# # 模型架构选择 - DiT 稳定配置
+# arch: "dit"
 
-# 早停配置
-early_stopping:
-  enabled: true
-  patience: 5
-  min_delta: 0.01
-
-# 评估配置
-eval_every_epochs: 20
-eval_num_samples: 500
-
-# 模型保存策略
-save_best: true
-best_metric: 'fid'
-
-# =============================================================================
-# DiT (Diffusion Transformer) 架构配置
-# =============================================================================
-# 使用方法: 将 arch 改为 'dit' 或 'dit_cross'
-#
-# arch: 'dit'           # 纯DiT: 使用AdaLN注入条件，条件通过cross-attn pooling融合
-# arch: 'dit_cross'     # DiT+Cross: AdaLN + 每层对contact做cross-attention
-#
-# DiT 特有参数:
-# dit_drop_path: 0.1              # Stochastic Depth rate (线性增长)
-# dit_use_cross_attn_pooling: true  # 用cross-attention聚合contact特征 (仅dit)
-#
-# 推荐配置 (HumanML3D):
-# arch: 'dit'
+# # DiT 核心参数
 # latent_dim: 512
-# num_layers: [1,1,1,1,1,1,1,1]   # 总共8层DiT blocks
+# mask_motion: true
+
+# # 层数配置（保持5层，不增加）
+# num_layers: [1, 1, 1, 1, 1]
+
+# # 注意力头数
 # num_heads: 8
-# dim_feedforward: 2048           # MLP ratio = 4
-# dropout: 0.1
-# dit_drop_path: 0.1
-# =============================================================================
+
+# # MLP 扩展倍数
+# dim_feedforward: 1024
+
+# # Dropout（增强正则化）
+# dropout: 0.15
+
+# # DiT 专用参数
+# dit_drop_path: 0.05
+# dit_use_cross_attn_pooling: true
+
+# # 条件嵌入配置
+# condition_embedder:
+#   use_cross_attn_pooling: true
+#   num_latents: 64
+#   fusion_method: 'cross_attn'
+
+# # 训练稳定性参数
+# grad_clip: 1.0
+# weight_decay: 1e-4
+# warmup_steps: 2000
+# lr_scheduler: 'cosine'
+
+# # 早停配置
+# early_stopping:
+#   enabled: true
+#   patience: 5
+#   min_delta: 0.01
+
+# # 评估配置
+# eval_every_epochs: 20
+# eval_num_samples: 500
+
+# # 模型保存策略
+# save_best: true
+# best_metric: 'fid'
+
+
