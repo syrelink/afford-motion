@@ -60,6 +60,9 @@ class CMDM(nn.Module):
         elif self.arch == 'dit_cross':
             SceneMapModule = SceneMapEncoder
             self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
+        elif self.arch == 'bimamba':
+            SceneMapModule = SceneMapEncoder
+            self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
         else:
             raise NotImplementedError
 
@@ -418,7 +421,7 @@ class CMDM(nn.Module):
         x = self.motion_adapter(x)  # [bs, seq_len, latent_dim]
 
         # ================== Main Forward Logic ==================
-        if self.arch in ['trans_enc', 'trans_mamba', 'trans_mamba_cross', 'trans_rwkv']:
+        if self.arch in ['trans_enc', 'trans_mamba', 'trans_mamba_cross', 'trans_rwkv', 'bimamba']:
             x = torch.cat([time_emb, text_emb, cont_emb, x], dim=1)
             x = self.positional_encoder(x.permute(1, 0, 2)).permute(1, 0, 2)
 
@@ -451,6 +454,17 @@ class CMDM(nn.Module):
                     if isinstance(layer, BidirectionalMambaBlock):
                         x = layer(x, padding_mask=x_mask)
                     elif isinstance(layer, nn.TransformerEncoderLayer):
+                        x = layer(x, src_key_padding_mask=x_mask)
+                    else:
+                        x = layer(x)
+            # --- Branch: BiMamba (3 Trans + 2 BiMamba) ---
+            elif self.arch == 'bimamba':
+                for idx, layer in enumerate(self.encoder_layers):
+                    if isinstance(layer, BidirectionalMambaBlock):
+                        # BiMamba层：接收条件注入
+                        x = layer(x, padding_mask=x_mask)
+                    elif isinstance(layer, nn.TransformerEncoderLayer):
+                        # Transformer层：标准处理
                         x = layer(x, src_key_padding_mask=x_mask)
                     else:
                         x = layer(x)
@@ -553,6 +567,8 @@ class CMDM(nn.Module):
             # Final layer
             x = self.final_layer(x, cond)
             return x  # Skip motion_layer
+
+
 
         else:
             raise NotImplementedError

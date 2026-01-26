@@ -55,6 +55,7 @@ CMD="CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run \
     model.mamba_d_conv=4 \
     model.mamba_expand=2 \
     model.mamba_drop_path=0.05 \
+    training.lr=3e-5 \
 
 
 # 添加checkpoint
