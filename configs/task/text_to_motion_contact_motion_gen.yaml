@@ -13,7 +13,7 @@ train:
 
 # outputs/2025-09-15_15-05-55_RTX4090-real/ckpt/model300000.pt
 # outputs/2026-01-18_21-22-37_CMDM-Enc-H3D-mixtrain0.5-dit/ckpt/model175000.pt
-  resume_ckpt: '' # resume from checkpoint
+  resume_ckpt: 'outputs/2026-01-21_22-02-09_CMDM-Enc-H3D-mixtrain0.5-pointmamba/other-ckpt/model325000.pt' # resume from checkpoint
   weight_decay: 0.0
   lr_anneal_steps: 0
   schedule_sampler_type: 'uniform'
