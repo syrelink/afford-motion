@@ -13,7 +13,6 @@ from utils.misc import compute_repr_dimesion
 from models.trick.mamba_block import *
 # from models.trick.mamba_cross import *
 # from models.trick.mamba_block_AdaLN import *
-# from models.trick.rwkv_block import BidirectionalRWKVBlock
 from models.trick.dit_block import DiTBlock, DiTBlockWithCrossAttention, ConditionEmbedder, FinalLayer
 
 
@@ -49,9 +48,6 @@ class CMDM(nn.Module):
             SceneMapModule = SceneMapEncoder
             self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
         elif self.arch == 'trans_mamba_cross':
-            SceneMapModule = SceneMapEncoder
-            self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
-        elif self.arch == 'trans_rwkv':
             SceneMapModule = SceneMapEncoder
             self.contact_adapter = nn.Linear(self.planes[-1], self.latent_dim, bias=True)
         elif self.arch == 'dit':
@@ -173,10 +169,7 @@ class CMDM(nn.Module):
                     )
                 self.encoder_layers.append(layer)
 
-        # -----------------------------------------------------------
-        # [BiMamba Branch] Bi-directional Mamba architecture
-        # -----------------------------------------------------------
-        elif self.arch == 'bimamba':
+        elif self.arch == 'trans_mamba_AdaLN':
             total_layers = sum(cfg.num_layers)
             mamba_layers = getattr(cfg, 'mamba_layers', 2)
 
@@ -218,10 +211,7 @@ class CMDM(nn.Module):
                     print(f"  Layer {i+1}: BidirectionalMambaBlock")
             print(f"{'=' * 64}\n")
 
-        # -----------------------------------------------------------
-        # [RWKV Branch] 正确初始化
-        # -----------------------------------------------------------
-        elif self.arch == 'trans_rwkv':
+
             total_layers = sum(cfg.num_layers)
             rwkv_layers = getattr(cfg, 'rwkv_layers', 1)
 
@@ -288,8 +278,6 @@ class CMDM(nn.Module):
                             batch_first=True,
                         )
                     )
-
-
 
         # -----------------------------------------------------------
         # [DiT· Branch] DiT-style architecture with AdaLN
@@ -419,7 +407,6 @@ class CMDM(nn.Module):
 
         ## motion embedding
         x = self.motion_adapter(x)  # [bs, seq_len, latent_dim]
-
         # ================== Main Forward Logic ==================
         if self.arch in ['trans_enc', 'trans_mamba', 'trans_mamba_cross', 'trans_rwkv', 'bimamba']:
             x = torch.cat([time_emb, text_emb, cont_emb, x], dim=1)
@@ -457,8 +444,8 @@ class CMDM(nn.Module):
                         x = layer(x, src_key_padding_mask=x_mask)
                     else:
                         x = layer(x)
-            # --- Branch: BiMamba (3 Trans + 2 BiMamba) ---
-            elif self.arch == 'bimamba':
+            # --- Branch: BiMamba (3 Trans + 2 BiMamba)+AdaLN调优 ---
+            elif self.arch == 'trans_mamba_AdaLN':
                 for idx, layer in enumerate(self.encoder_layers):
                     if isinstance(layer, BidirectionalMambaBlock):
                         # BiMamba层：接收条件注入
@@ -469,8 +456,6 @@ class CMDM(nn.Module):
                     else:
                         x = layer(x)
 
-            # --- Branch: RWKV (With Context for Top-3) ---
-            elif self.arch == 'trans_rwkv':
                 for layer in self.encoder_layers:
                     if isinstance(layer, BidirectionalRWKVBlock):
                         # [关键] 传入 context 以激活 Cross-Attention
@@ -567,8 +552,6 @@ class CMDM(nn.Module):
             # Final layer
             x = self.final_layer(x, cond)
             return x  # Skip motion_layer
-
-
 
         else:
             raise NotImplementedError
